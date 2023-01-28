@@ -11,8 +11,6 @@ output: "pdf_document"
 ## modelr, pillar, purrr, readr, readxl, reprex, rlang, rstudioapi, rvest, stringr, tibble,
 ## tidyr, xml2
 library(tidyverse)
-## to load glow500 from "Applied Logistic Regression" by D.W. Hosmer, S. Lemeshow, and R.X. Sturdivant (3rd ed., 2013)
-library(aplore3)
 ## provides many functions useful for data analysis, high-level graphics, and utility operations like describe()
 library(Hmisc)
 ## to work with "grid" graphics
@@ -31,15 +29,22 @@ Columns: 62
 raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
 ```
 
-```{r, message=FALSE, warning=FALSE}
-head(raw_df)
+
+[link to the handmade codebook]("https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing")
+
+--- 
+# Summary statistics of variables
+Rows: 19015
+Columns: 62
+```{r}
+#summary(df)
 ```
 
-- SITE_ID
 
-- SITE_IGBP
+```{r}
+describe(raw_df)
+```
 
-- TA_F
 
 
 
