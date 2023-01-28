@@ -1,0 +1,27 @@
+---
+title: "co2-gpp-modeling-EDA"
+output: "pdf_document"
+---
+
+# Import Libraries
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+## Load a set of packages inclusing: broom, cli, crayon, dbplyr , dplyr, dtplyr, forcats,
+## googledrive, googlesheets4, ggplot2, haven, hms, httr, jsonlite, lubridate , magrittr,
+## modelr, pillar, purrr, readr, readxl, reprex, rlang, rstudioapi, rvest, stringr, tibble,
+## tidyr, xml2
+library(tidyverse)
+## to load glow500 from "Applied Logistic Regression" by D.W. Hosmer, S. Lemeshow, and R.X. Sturdivant (3rd ed., 2013)
+library(aplore3)
+## provides many functions useful for data analysis, high-level graphics, and utility operations like describe()
+library(Hmisc)
+## to work with "grid" graphics
+library(gridExtra)
+## To generate regression results, tables, and plots
+library(finalfit)
+## To produces LaTeX code, HTML/CSS code and ASCII text for well-formatted tables
+library(stargazer)
+```
+
+
+
