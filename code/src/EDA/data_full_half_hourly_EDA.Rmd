@@ -1,0 +1,49 @@
+---
+title: "data_full_half_hourly_EDA"
+output: "pdf_document"
+author: "Rumi Nakagawa"
+---
+
+# Load Libraries
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+library(tidyverse)
+library(Hmisc)
+library(gridExtra)
+library(finalfit)
+library(stargazer)
+```
+
+# Import data from csv file
+Rows: 19015
+Columns: 62
+```{r, message=FALSE, warning=FALSE}
+# EDA/src/
+raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+```
+
+
+[link to the handmade codebook]("https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing")
+
+--- 
+# Summary statistics of variables
+Rows: 19015
+Columns: 62
+```{r}
+#summary(df)
+```
+
+
+```{r}
+describe(raw_df)
+```
+
+
+
+
+
+
+
+
+
+
