@@ -1,24 +1,18 @@
 ---
-title: "co2-gpp-modeling-EDA"
+title: "data_monthly_v1_0_EDA"
 output: "pdf_document"
 ---
 
-# Import Libraries
+# Load Libraries
 ```{r, message=FALSE, warning=FALSE}
 # Load libraries
-## Load a set of packages inclusing: broom, cli, crayon, dbplyr , dplyr, dtplyr, forcats,
-## googledrive, googlesheets4, ggplot2, haven, hms, httr, jsonlite, lubridate , magrittr,
-## modelr, pillar, purrr, readr, readxl, reprex, rlang, rstudioapi, rvest, stringr, tibble,
-## tidyr, xml2
 library(tidyverse)
-## provides many functions useful for data analysis, high-level graphics, and utility operations like describe()
 library(Hmisc)
-## to work with "grid" graphics
 library(gridExtra)
-## To generate regression results, tables, and plots
 library(finalfit)
-## To produces LaTeX code, HTML/CSS code and ASCII text for well-formatted tables
 library(stargazer)
+
+
 ```
 
 # Import data from csv file
@@ -36,15 +30,49 @@ raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
 # Summary statistics of variables
 Rows: 19015
 Columns: 62
-```{r}
-#summary(df)
-```
-
 
 ```{r}
 describe(raw_df)
 ```
 
+# Distribution of Land-cover Type by Site
+`SITE_IGBP`(Land-cover Type): 11
+`SITE_ID`(Sites): 243
+```{r}
+raw_df %>% 
+  count(SITE_ID)
+```
+
+```{r, fig.width=10, fig.height=3}
+site_igbp_distribution <-raw_df %>% 
+  select(SITE_ID,SITE_IGBP) %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count= n())
+
+fig1 <- raw_df %>% 
+  select(SITE_ID,SITE_IGBP) %>%
+  unique() %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(sites)")
+
+fig2 <- site_igbp_distribution %>% 
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(observations)")
+
+grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
+```
+
+
+
+
+
+```{r}
+site_igbp_distribution
+```
 
 
 
