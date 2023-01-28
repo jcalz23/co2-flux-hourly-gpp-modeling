@@ -23,5 +23,29 @@ library(finalfit)
 library(stargazer)
 ```
 
+# Import data from csv file
+Rows: 19015
+Columns: 62
+```{r, message=FALSE, warning=FALSE}
+# EDA/src/
+raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+```
+
+```{r, message=FALSE, warning=FALSE}
+head(raw_df)
+```
+
+- SITE_ID
+
+- SITE_IGBP
+
+- TA_F
+
+
+
+
+
+
+
 
 
