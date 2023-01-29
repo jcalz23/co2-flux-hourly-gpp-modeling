@@ -3,7 +3,8 @@ title: "data_monthly_v1_0_EDA"
 output: "pdf_document"
 ---
 
-# Load Libraries
+# 0. Preparation
+## Load Libraries
 ```{r, message=FALSE, warning=FALSE}
 # Load libraries
 library(tidyverse)
@@ -11,15 +12,12 @@ library(Hmisc)
 library(gridExtra)
 library(finalfit)
 library(stargazer)
-## To load All data sets in the book "Forecasting: principles and practice."
-#by Rob J Hyndman and George Athanasopoulos
-library(fpp3)
 # To create and work with tidy temporal data
 library(tsibble)
 # To work with date-times and time-spans
 library(lubridate)
-# Provides a collection of commonly used univariate and multivariate time series models
-library(fable )
+# Provides a collection of commonly used univariate/multivariate TS models
+library(fable)
 ## To interact directly with the Quandl API and download data
 library(Quandl)
 # For analyzing tidy time series data.
@@ -39,15 +37,21 @@ library(gtrendsR)
 library(tseries)
 ```
 
-# Import data from csv file
+## Import data from csv file
 Rows: 19015
 Columns: 62
+
+[Link to the handmade codebook](https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing)
+https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing
+
+## Overview of monthly dataset
 ```{r, message=FALSE, warning=FALSE}
-# EDA/src/
 raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
 glimpse(raw_df)
 ```
-# Original dataset
+# 1. Findings
+## Source of each observation
+All the observation seems to have origin in four datasets
 ```{r}
 raw_df %>% 
   group_by(dataset) %>%
@@ -62,12 +66,118 @@ raw_df %>%
 
 
 
-
-# Convert dataset to TS
-## TS month
+--- 
+## Distribution of Land-cover Type by Site
+`SITE_IGBP`(Land-cover Type): 11
+`SITE_ID`(Sites): 243
 ```{r}
-IGBP_month_df <- raw_df %>% 
-  group_by(SITE_IGBP, month) %>%
+raw_df %>% 
+  count(SITE_ID)
+```
+```{r}
+raw_df
+```
+
+```{r, fig.width=10, fig.height=3}
+library(dplyr)
+site_igbp_distribution <- raw_df %>% 
+  dplyr::select(SITE_ID, SITE_IGBP) %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count= n())
+
+fig1 <- raw_df %>% 
+  dplyr::select(SITE_ID,SITE_IGBP) %>%
+  unique() %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(sites)")
+
+fig2 <- site_igbp_distribution %>% 
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(observations)")
+
+grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
+```
+```{r}
+site_igbp_distribution
+```
+
+### Add features that distinguish northern/southern hemisphere
+```{r}
+raw_df_hemisphere <- raw_df %>%
+  mutate(hemisphere = ifelse(LOCATION_LAT >= 0, "N", "S"))
+
+raw_df_hemisphere
+```
+```{r, fig.width=10, fig.height=3}
+library(dplyr)
+site_igbp_distribution <- raw_df_hemisphere %>%
+  
+  dplyr::select(SITE_ID, SITE_IGBP) %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count= n())
+
+fig1 <- raw_df %>% 
+  dplyr::select(SITE_ID,SITE_IGBP) %>%
+  unique() %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(sites)")
+
+fig2 <- site_igbp_distribution %>% 
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(observations)")
+
+grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
+```
+
+
+## Observe categorical variables
+Since they only have 243 rows by removing all the duplicates, 
+all the categorical has unique values in each site.
+```{r}
+raw_df_categorical <- raw_df_hemisphere %>%
+  dplyr::select(SITE_ID, SITE_IGBP, dataset, MODIS_IGBP, MODIS_PFT, 
+         koppen_sub, koppen, hemisphere) %>% 
+  distinct() #drop duplicates
+  
+head(raw_df_categorical)
+```
+```{r}
+raw_df_categorical %>% 
+  distinct(koppen) %>%
+  as.list()
+```
+
+### Unique values of categorical variables
+
+- SITE_ID: 243
+- SITE_IGBP: 11
+  - MF, ENF, GRA, SAV, WSA, EBF, WET, OSH, DBF, CRO, CSH
+- MODIS_IGBP: 14 
+  - OSH, SAV, MF, CSH, GRA, ENF, EBF, WSA, DBF, CRO, WAT, BSV, URB, WET
+- MODIS_PFT: 14 
+  -  SH, SA, MF, GRA, ENF, EBF, DBF, CRO, Other
+- koppen_sub: 21
+  - BSk, Cfa, Dfb, BWh, Aw, BWk, BSh, Csa, Cfb, Am, Dfc, Dwb, Dwa, Cwa, Dwc,
+    ET, Dsb, Af, Dsc, Csb, Dfa
+- koppen: 5
+  - Arid, Temperate, Cold, Tropical, Polar
+
+## Convert to monthly average dataset
+
+### Create a new df of monthly average across sites(SITE_ID)
+row: 2781
+
+```{r}
+SITE_month_df <- raw_df_hemisphere %>% 
+  group_by(SITE_ID, SITE_IGBP, month) %>%
   summarise(TA_F_avg = mean(TA_F, na.rm = T),VPD_F_avg = mean(VPD_F, na.rm = T),
             P_F_avg = mean(P_F, na.rm = T),NETRAD_avg = mean(NETRAD, na.rm = T),
             NEE_VUT_REF_avg = mean(NEE_VUT_REF, na.rm = T),
@@ -108,56 +218,140 @@ IGBP_month_df <- raw_df %>%
             CO2_concentration_avg = mean(CO2_concentration, na.rm = T)
                         )
 
+
+# Merge categorical variables
+
+raw_df_categorical_ <- raw_df_categorical %>%
+  dplyr::select(-c(SITE_IGBP)) # drop SITE_IGBP to avoid two variables in one df
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_categorical_,
+                       by="SITE_ID", all.x = TRUE)
+
+# Add longitude/latitude to monthly df
+raw_df_geo <- raw_df_hemisphere %>% dplyr::select(SITE_ID, LOCATION_LAT, LOCATION_LONG)
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_geo,
+                       by="SITE_ID", all.x = TRUE)
+
 # raw_df_ts_month <- raw_df %>% as_tsibble(index=month)
-IGBP_month_df
 ```
 
-
-
-[link to the handmade codebook]("https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing")
-
---- 
-# Distribution of Land-cover Type by Site
-`SITE_IGBP`(Land-cover Type): 11
-`SITE_ID`(Sites): 243
+## Create a new df of monthly average across land-cover types(SITE_IGBP)
+Categorical variables are excluded due to its dependency to each site. 
 ```{r}
-raw_df %>% 
-  count(SITE_ID)
+IGBP_month_df <- raw_df_hemisphere %>% 
+  group_by(SITE_IGBP, hemisphere, month) %>%
+  summarise(TA_F_avg = mean(TA_F, na.rm = T),VPD_F_avg = mean(VPD_F, na.rm = T),
+            P_F_avg = mean(P_F, na.rm = T),NETRAD_avg = mean(NETRAD, na.rm = T),
+            NEE_VUT_REF_avg = mean(NEE_VUT_REF, na.rm = T),
+            NEE_VUT_REF_QC_avg = mean(NEE_VUT_REF_QC, na.rm = T),
+            NEE_CUT_REF_avg = mean(NEE_CUT_REF, na.rm = T),
+            NEE_CUT_REF_QC_avg = mean(NEE_CUT_REF_QC, na.rm = T),
+            GPP_NT_VUT_REF_avg = mean(GPP_NT_VUT_REF, na.rm = T),
+            GPP_DT_VUT_REF_avg = mean(GPP_DT_VUT_REF, na.rm = T),
+            GPP_NT_CUT_REF_avg = mean(GPP_NT_CUT_REF, na.rm = T),
+            GPP_DT_CUT_REF_avg = mean(GPP_DT_CUT_REF, na.rm = T),
+            RECO_NT_VUT_REF_avg = mean(RECO_NT_VUT_REF, na.rm = T),
+            RECO_DT_VUT_REF_avg = mean(RECO_DT_VUT_REF, na.rm = T),
+            RECO_NT_CUT_REF_avg = mean(RECO_NT_CUT_REF, na.rm = T),
+            RECO_DT_CUT_REF_avg = mean(RECO_DT_CUT_REF, na.rm = T),
+            ET_avg = mean(ET, na.rm = T),
+            `BESS-PAR_avg` = mean(`BESS-PAR`, na.rm = T),
+            `BESS-PARdiff_avg` = mean(`BESS-PARdiff`, na.rm = T),
+            `BESS-RSDN_avg` = mean(`BESS-RSDN`, na.rm = T),
+            `CSIF-SIFdaily_avg` = mean(`CSIF-SIFdaily`, na.rm = T),
+            `CSIF-SIFinst_avg` = mean(`CSIF-SIFinst`, na.rm = T),
+            PET_avg = mean(PET, na.rm = T),Ts_avg = mean(Ts, na.rm = T),
+            Tmean_avg = mean(Tmean, na.rm = T),
+            prcp_avg = mean(prcp, na.rm = T),
+            vpd_avg = mean(vpd, na.rm = T),
+            `prcp-lag3_avg` = mean(`prcp-lag3`, na.rm = T),
+            `ESACCI-sm_avg` = mean(`ESACCI-sm`, na.rm = T),
+            b1_avg = mean(b1, na.rm = T),b2_avg = mean(b2, na.rm = T),
+            b3_avg = mean(b3, na.rm = T),b4_avg = mean(b4, na.rm = T),
+            b5_avg = mean(b5, na.rm = T),b6_avg = mean(b6, na.rm = T),
+            b7_avg = mean(b7, na.rm = T),EVI_avg = mean(EVI, na.rm = T),
+            GCI_avg = mean(GCI, na.rm = T),NDVI_avg = mean(NDVI, na.rm = T),
+            NDWI_avg = mean(NDWI, na.rm = T),NIRv_avg = mean(NIRv, na.rm = T),
+            kNDVI_avg = mean(kNDVI, na.rm = T),
+            Percent_Snow_avg = mean(Percent_Snow, na.rm = T),
+            Fpar_avg = mean(Fpar, na.rm = T),Lai_avg = mean(Lai, na.rm = T),
+            LST_Day_avg = mean(LST_Day, na.rm = T),
+            LST_Night_avg = mean(LST_Night, na.rm = T),
+            CO2_concentration_avg = mean(CO2_concentration, na.rm = T)
+                        )
+# raw_df_ts_month <- raw_df %>% as_tsibble(index=month)
 ```
-
-```{r, fig.width=10, fig.height=3}
-site_igbp_distribution <-raw_df %>% 
-  select(SITE_ID,SITE_IGBP) %>%
-  group_by(SITE_IGBP) %>%
-  summarise(count= n())
-
-fig1 <- raw_df %>% 
-  select(SITE_ID,SITE_IGBP) %>%
-  unique() %>%
-  group_by(SITE_IGBP) %>%
-  summarise(count=n()) %>%
-  ggplot(aes(x=SITE_IGBP, y=count)) +
-  geom_bar(stat='identity') +
-  labs(title = "Distribution of land-cover type(sites)")
-
-fig2 <- site_igbp_distribution %>% 
-  ggplot(aes(x=SITE_IGBP, y=count)) +
-  geom_bar(stat='identity') +
-  labs(title = "Distribution of land-cover type(observations)")
-
-grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
-```
+### Export df to csv
 ```{r}
-site_igbp_distribution
+# write.csv(IGBP_month_df,
+#           "../../../data/datasets/SITE_IGBP_month_df.csv",row.names=FALSE)
+# write.csv(SITE_month_df,
+#           "../../../data/datasets/SITE_month_df.csv", row.names=FALSE)
 ```
+
 # Monthly transition of GPP and NEE by land-cover type
 
 ```{r}
-
+IGBP_month_df %>% subset(SITE_IGBP == "CRO") %>%
+  subset(hemisphere == "N") %>%
+  as_tsibble(index = month) %>% 
+  gg_tsdisplay(GPP_DT_VUT_REF_avg, plot_type="partial")
 ```
 
 
-# Summary statistics of variables
+```{r, fig.width=5, fig.height=3.5}
+# GPP_DT_VUT_REF in DE-Seh
+print("GPP_DT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_DT_VUT_REF, plot_type="partial")
+
+# GPP_NT_VUT_REF in DE-Seh
+print("GPP_NT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_NT_VUT_REF, plot_type="partial")
+  
+# NEE_VUT_REF in DE-Seh
+print("NEE_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF, plot_type="partial")
+
+# NEE_VUT_REF_QC in DE-Seh
+print("NEE_VUT_REF_QC in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF_QC, plot_type="partial")
+
+```
+```{r, fig.width=5, fig.height=4}
+```
+
+
+```{r}
+
+```
+```{r}
+
+```
+```{r}
+
+```
+
+# Appendix
+# Summary statistics of features
 Rows: 19015
 Columns: 62
 
