@@ -220,6 +220,7 @@ SITE_month_df <- raw_df_hemisphere %>%
             CO2_concentration_avg = mean(CO2_concentration, na.rm = T)
                         )
 
+<<<<<<< HEAD
 # Merge categorical variables
 
 # raw_df_categorical_ <- raw_df_categorical %>%
@@ -235,6 +236,24 @@ SITE_month_df <- raw_df_hemisphere %>%
 ```
 
 
+=======
+
+# Merge categorical variables
+
+raw_df_categorical_ <- raw_df_categorical %>%
+  dplyr::select(-c(SITE_IGBP)) # drop SITE_IGBP to avoid two variables in one df
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_categorical_,
+                       by="SITE_ID", all.x = TRUE)
+
+# Add longitude/latitude to monthly df
+raw_df_geo <- raw_df_hemisphere %>% dplyr::select(SITE_ID, LOCATION_LAT, LOCATION_LONG)
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_geo,
+                       by="SITE_ID", all.x = TRUE)
+
+# raw_df_ts_month <- raw_df %>% as_tsibble(index=month)
+```
+
+>>>>>>> 171dac32c3ec2e4066b788989a9e7554e681e5a7
 ## Create a new df of monthly average across land-cover types(SITE_IGBP)
 Categorical variables are excluded due to its dependency to each site. 
 ```{r}
@@ -283,10 +302,17 @@ IGBP_month_df <- raw_df_hemisphere %>%
 ```
 ### Export df to csv
 ```{r}
+<<<<<<< HEAD
 write.csv(IGBP_month_df,
           "../../../data/datasets/SITE_IGBP_month_df.csv",row.names=FALSE)
 write.csv(SITE_month_df,
           "../../../data/datasets/SITE_month_df.csv", row.names=FALSE)
+=======
+# write.csv(IGBP_month_df,
+#           "../../../data/datasets/SITE_IGBP_month_df.csv",row.names=FALSE)
+# write.csv(SITE_month_df,
+#           "../../../data/datasets/SITE_month_df.csv", row.names=FALSE)
+>>>>>>> 171dac32c3ec2e4066b788989a9e7554e681e5a7
 ```
 
 # Monthly transition of GPP and NEE by land-cover type
@@ -767,13 +793,69 @@ raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
 
 
 ```{r}
-
+IGBP_month_df %>% subset(SITE_IGBP == "CRO") %>%
+  subset(hemisphere == "N") %>%
+  as_tsibble(index = month) %>% 
+  gg_tsdisplay(GPP_DT_VUT_REF_avg, plot_type="partial")
 ```
 ```{r}
 
 ```
 ```{r}
 
+<<<<<<< HEAD
+=======
+```{r, fig.width=5, fig.height=3.5}
+# GPP_DT_VUT_REF in DE-Seh
+print("GPP_DT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_DT_VUT_REF, plot_type="partial")
+
+# GPP_NT_VUT_REF in DE-Seh
+print("GPP_NT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_NT_VUT_REF, plot_type="partial")
+  
+# NEE_VUT_REF in DE-Seh
+print("NEE_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF, plot_type="partial")
+
+# NEE_VUT_REF_QC in DE-Seh
+print("NEE_VUT_REF_QC in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF_QC, plot_type="partial")
+
+```
+```{r, fig.width=5, fig.height=4}
+```
+
+
+```{r}
+
+```
+```{r}
+
+```
+```{r}
+
+>>>>>>> 171dac32c3ec2e4066b788989a9e7554e681e5a7
 ```
 
 # Appendix
