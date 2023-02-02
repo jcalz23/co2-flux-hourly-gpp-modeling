@@ -4,3 +4,4 @@ data/datasets/
 .cred/
 .tmp/
 **/.ipynb_checkpoints/
+code/cred.zip
