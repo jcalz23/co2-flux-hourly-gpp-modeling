@@ -18,8 +18,9 @@ library(stargazer)
 Rows: 19015
 Columns: 62
 ```{r, message=FALSE, warning=FALSE}
-# EDA/src/
-raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+# 
+# Add folder "data_full_half_hourly" and store "data_full_half_hourly_raw_v0_1_US-WPT.csv" locally
+df_US_WPT <- read_csv("../../../data/datasets/data_full_half_hourly/data_full_half_hourly_raw_v0_1_US-WPT.csv")
 ```
 
 
@@ -29,13 +30,11 @@ raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
 # Summary statistics of variables
 Rows: 19015
 Columns: 62
-```{r}
-#summary(df)
-```
 
 
 ```{r}
-describe(raw_df)
+describe(df_US_WPT)
+# summary(df_US_WPT)
 ```
 
 
