@@ -1,0 +1,61 @@
+from azure.storage.blob import BlobServiceClient
+from collections import defaultdict
+import os.path
+import json
+
+class AzStorageClient:
+    def __init__(self, cred_file):
+        self.blob_svc_client = None
+        self.container_client_list = defaultdict(str)
+        if os.path.exists(cred_file):
+            connect_str = ""
+            with open(cred_file, "rb") as f:
+                data = json.load(f)
+                connect_str = data['connectionstr']
+                self.blob_svc_client = BlobServiceClient.from_connection_string(connect_str)
+        else:
+            print("ERROR: {cred_file} not found")
+    
+    def createContainer(self, container_name):
+        if self.blob_svc_client:
+            self.blob_svc_client.create_container(container_name)
+            print(f"Container '{container_name}' created.")
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+
+    def listBlobs(self, container_name):
+        if self.blob_svc_client:
+            if not self.container_client_list[container_name]:
+                self.container_client_list[container_name] = self.blob_svc_client.get_container_client(container= container_name)
+            blob_list = self.container_client_list[container_name].list_blobs()
+            return blob_list
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+
+    def uploadBlob(self, container_name, blob_name, data, overwrite=False, verbose=True):
+        if self.blob_svc_client:
+            blob_cleint = self.blob_svc_client.get_blob_client(container=container_name, blob=blob_name)
+            blob_cleint.upload_blob(data, overwrite=overwrite)
+            if verbose:
+                print(f'File uploaded to {container_name}/{blob_name}')
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+    
+    def downloadBlob(self, container_name, blob_name):
+        if self.blob_svc_client:
+            if not self.container_client_list[container_name]:
+                self.container_client_list[container_name] = self.blob_svc_client.get_container_client(container= container_name)
+            
+            return self.container_client_list[container_name].download_blob(blob_name).readall()
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+    
+    def deleteBlob(self, container_name, blob_name, verbose=True):
+        if self.blob_svc_client:
+            blob_client = self.blob_svc_client.get_blob_client(container=container_name, blob=blob_name)
+            blob_client.delete_blob()
+            if verbose:
+                print(f'{container_name}/{blob_name} deleted')
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+    
