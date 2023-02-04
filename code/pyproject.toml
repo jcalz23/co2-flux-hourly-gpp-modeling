@@ -6,7 +6,7 @@ authors = ["jcalz23 <j.calzaretta.ai@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10, <3.11"
 pandas = "^1.5.3"
 numpy = "^1.24.1"
 seaborn = "^0.12.2"
@@ -18,7 +18,9 @@ azure-storage-blob = "^12.14.1"
 tqdm = "^4.64.1"
 jupyter = "^1.0.0"
 notebook = "^6.5.2"
-
+#scipy = { version = "^1.10.0", python = ">=3.10" }
+scipy = "^1.10.0"
+scikit-learn = "^1.2.1"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.20.2"
