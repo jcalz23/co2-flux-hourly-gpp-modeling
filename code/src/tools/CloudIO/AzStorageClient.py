@@ -1,5 +1,6 @@
 from azure.storage.blob import BlobServiceClient
 from collections import defaultdict
+from io import BytesIO
 import os.path
 import json
 
@@ -47,6 +48,17 @@ class AzStorageClient:
                 self.container_client_list[container_name] = self.blob_svc_client.get_container_client(container= container_name)
             
             return self.container_client_list[container_name].download_blob(blob_name).readall()
+        else:
+            print("ERROR: Azure Storage Blob Client does not exist.")
+    
+    def downloadBlob2Stream(self, container_name, blob_name):
+        if self.blob_svc_client:
+            if not self.container_client_list[container_name]:
+                self.container_client_list[container_name] = self.blob_svc_client.get_container_client(container= container_name)
+            
+            stream = BytesIO()
+            self.container_client_list[container_name].download_blob(blob_name).readinto(stream)
+            return stream
         else:
             print("ERROR: Azure Storage Blob Client does not exist.")
     
