@@ -5,3 +5,4 @@ data/datasets/
 .tmp/
 **/.ipynb_checkpoints/
 code/cred.zip
+code/src/EDA/logs/

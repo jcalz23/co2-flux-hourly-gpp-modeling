@@ -2517,6 +2517,21 @@ requests = ">=2.0.0"
 rsa = ["oauthlib[signedtoken] (>=3.0.0)"]
 
 [[package]]
+name = "requires-io"
+version = "0.2.6"
+description = "Requires.io API"
+category = "main"
+optional = false
+python-versions = "*"
+files = [
+    {file = "requires.io-0.2.6-py2.py3-none-any.whl", hash = "sha256:a063b1caf0bf8aabf8c3867928c92c37c53625f6149d919e6847d0bd0a1ed8a5"},
+    {file = "requires.io-0.2.6.tar.gz", hash = "sha256:c050539587189bb69b0bbb31e2bc1fa47beffa930f8088142628f5888818f3cc"},
+]
+
+[package.dependencies]
+requests = ">=2.0.0"
+
+[[package]]
 name = "rfc3339-validator"
 version = "0.1.4"
 description = "A pure python RFC3339 validator"
@@ -2969,4 +2984,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10, <3.11"
-content-hash = "543ec6c897d10a8dff6241c904218162a65e9f3f053af9d8dde5776655ffa073"
+content-hash = "0aa5ce3643e61bc62aca294c69eaa049b541df092fad8eaba72a3708ef4ec76c"
