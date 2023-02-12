@@ -14,18 +14,9 @@ class AzStorageClient:
                 data = json.load(f)
                 connect_str = data['connectionstr']
                 self.blob_svc_client = BlobServiceClient.from_connection_string(connect_str)
-                tokens = connect_str.split(';')
-                for t in tokens:
-                  if "AccountName=" in t:
-                    self.AccountName = t[len("AccountName="):]
-                  elif "AccountKey=" in t:
-                    self.AccountKey = t[len("AccountKey="):]
         else:
             print("ERROR: {cred_file} not found")
     
-    def getSparkSessionKeys(self):
-      return [f'fs.azure.account.key.{self.AccountName}.blob.core.windows.net',  self.AccountKey, self.AccountName]
-
     def createContainer(self, container_name):
         if self.blob_svc_client:
             self.blob_svc_client.create_container(container_name)
