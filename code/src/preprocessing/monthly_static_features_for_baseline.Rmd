@@ -1,0 +1,826 @@
+---
+title: "monthly_static_features_for_baseline.Rmd"
+output: "pdf_document"
+editor_options: 
+  chunk_output_type: inline
+---
+
+# 0. Preparation
+## Load Libraries
+```{r, message=FALSE, warning=FALSE}
+# Load libraries
+library(tidyverse)
+library(Hmisc)
+library(gridExtra)
+library(finalfit)
+library(stargazer)
+# To create and work with tidy temporal data
+library(tsibble)
+# To work with date-times and time-spans
+library(lubridate)
+# Provides a collection of commonly used univariate/multivariate TS models
+library(fable)
+## To interact directly with the Quandl API and download data
+library(Quandl)
+# For analyzing tidy time series data.
+library(feasts)
+# Provides methods and tools for displaying and analyzing univariate time series forecasts library(forecast)
+# For estimation, lag selection, diagnostic testing, forecasting, and impulse response functions of VAR library(vars)
+#provides tools for statistical calculations
+library(stats)
+# To assist the quantitative trader in the development,
+#testing and deployment of statistically based trading models.
+library(quantmod)
+# For statistical analysis
+library(car)
+## To retrieve and display the information returned online by Google Trends
+library(gtrendsR)
+# To do time series analysis and computational finance.
+library(tseries)
+```
+
+## Import data from csv file
+Rows: 19015
+Columns: 62
+
+[Link to the handmade codebook](https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing)
+https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNGgyk/edit?usp=sharing
+
+## Overview of monthly dataset
+```{r, message=FALSE, warning=FALSE}
+raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+glimpse(raw_df)
+```
+# 1. Findings
+## Source of each observation
+All the observation seems to have origin in four datasets
+```{r}
+raw_df %>% 
+  group_by(dataset) %>%
+  summarise(count=n())
+```
+Sites are linked to dataset
+```{r}
+raw_df %>% 
+  group_by(SITE_ID, dataset) %>%
+  summarise(count=n())
+```
+
+
+
+--- 
+## Distribution of Land-cover Type by Site
+`SITE_IGBP`(Land-cover Type): 11
+`SITE_ID`(Sites): 243
+```{r}
+raw_df %>% 
+  count(SITE_ID)
+```
+```{r}
+raw_df
+```
+
+```{r, fig.width=10, fig.height=3}
+library(dplyr)
+site_igbp_distribution <- raw_df %>% 
+  dplyr::select(SITE_ID, SITE_IGBP) %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count= n())
+
+fig1 <- raw_df %>% 
+  dplyr::select(SITE_ID,SITE_IGBP) %>%
+  unique() %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(sites)")
+
+fig2 <- site_igbp_distribution %>% 
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(observations)")
+
+grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
+```
+```{r}
+site_igbp_distribution
+```
+
+### Add features that distinguish northern/southern hemisphere
+```{r}
+raw_df_hemisphere <- raw_df %>%
+  mutate(hemisphere = ifelse(LOCATION_LAT >= 0, "N", "S"))
+
+raw_df_hemisphere
+```
+```{r, fig.width=10, fig.height=3}
+library(dplyr)
+site_igbp_distribution <- raw_df_hemisphere %>%
+  
+  dplyr::select(SITE_ID, SITE_IGBP) %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count= n())
+
+fig1 <- raw_df %>% 
+  dplyr::select(SITE_ID,SITE_IGBP) %>%
+  unique() %>%
+  group_by(SITE_IGBP) %>%
+  summarise(count=n()) %>%
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(sites)")
+
+fig2 <- site_igbp_distribution %>% 
+  ggplot(aes(x=SITE_IGBP, y=count)) +
+  geom_bar(stat='identity') +
+  labs(title = "Distribution of land-cover type(observations)")
+
+grid.arrange(fig1, fig2, nrow = 1, ncol = 2)
+```
+
+
+## Observe categorical variables
+Since they only have 243 rows by removing all the duplicates, 
+all the categorical variables has unique values in each site.
+```{r}
+raw_df_categorical <- raw_df_hemisphere %>%
+  dplyr::select(SITE_ID, SITE_IGBP, dataset, MODIS_IGBP, MODIS_PFT, 
+         koppen_sub, koppen, hemisphere) %>% 
+  distinct() #drop duplicates
+  
+raw_df_categorical
+```
+```{r}
+raw_df_categorical %>% 
+  distinct(koppen) %>%
+  as.list()
+```
+
+### Unique values of categorical variables
+
+- SITE_ID: 243
+- SITE_IGBP: 11
+  - MF, ENF, GRA, SAV, WSA, EBF, WET, OSH, DBF, CRO, CSH
+- MODIS_IGBP: 14 
+  - OSH, SAV, MF, CSH, GRA, ENF, EBF, WSA, DBF, CRO, WAT, BSV, URB, WET
+- MODIS_PFT: 14 
+  -  SH, SA, MF, GRA, ENF, EBF, DBF, CRO, Other
+- koppen_sub: 21
+  - BSk, Cfa, Dfb, BWh, Aw, BWk, BSh, Csa, Cfb, Am, Dfc, Dwb, Dwa, Cwa, Dwc,
+    ET, Dsb, Af, Dsc, Csb, Dfa
+- koppen: 5
+  - Arid, Temperate, Cold, Tropical, Polar
+
+## Convert to monthly average dataset with continuous features
+
+### Create a new df of monthly average across sites(SITE_ID)
+row: 2781
+
+```{r}
+SITE_month_df <- raw_df_hemisphere %>% 
+  group_by(SITE_ID, SITE_IGBP, month) %>%
+  summarise(TA_F_avg = mean(TA_F, na.rm = T),VPD_F_avg = mean(VPD_F, na.rm = T),
+            P_F_avg = mean(P_F, na.rm = T),NETRAD_avg = mean(NETRAD, na.rm = T),
+            NEE_VUT_REF_avg = mean(NEE_VUT_REF, na.rm = T),
+            NEE_VUT_REF_QC_avg = mean(NEE_VUT_REF_QC, na.rm = T),
+            NEE_CUT_REF_avg = mean(NEE_CUT_REF, na.rm = T),
+            NEE_CUT_REF_QC_avg = mean(NEE_CUT_REF_QC, na.rm = T),
+            GPP_NT_VUT_REF_avg = mean(GPP_NT_VUT_REF, na.rm = T),
+            GPP_DT_VUT_REF_avg = mean(GPP_DT_VUT_REF, na.rm = T),
+            GPP_NT_CUT_REF_avg = mean(GPP_NT_CUT_REF, na.rm = T),
+            GPP_DT_CUT_REF_avg = mean(GPP_DT_CUT_REF, na.rm = T),
+            RECO_NT_VUT_REF_avg = mean(RECO_NT_VUT_REF, na.rm = T),
+            RECO_DT_VUT_REF_avg = mean(RECO_DT_VUT_REF, na.rm = T),
+            RECO_NT_CUT_REF_avg = mean(RECO_NT_CUT_REF, na.rm = T),
+            RECO_DT_CUT_REF_avg = mean(RECO_DT_CUT_REF, na.rm = T),
+            ET_avg = mean(ET, na.rm = T),
+            `BESS-PAR_avg` = mean(`BESS-PAR`, na.rm = T),
+            `BESS-PARdiff_avg` = mean(`BESS-PARdiff`, na.rm = T),
+            `BESS-RSDN_avg` = mean(`BESS-RSDN`, na.rm = T),
+            `CSIF-SIFdaily_avg` = mean(`CSIF-SIFdaily`, na.rm = T),
+            `CSIF-SIFinst_avg` = mean(`CSIF-SIFinst`, na.rm = T),
+            PET_avg = mean(PET, na.rm = T),Ts_avg = mean(Ts, na.rm = T),
+            Tmean_avg = mean(Tmean, na.rm = T),
+            prcp_avg = mean(prcp, na.rm = T),
+            vpd_avg = mean(vpd, na.rm = T),
+            `prcp-lag3_avg` = mean(`prcp-lag3`, na.rm = T),
+            `ESACCI-sm_avg` = mean(`ESACCI-sm`, na.rm = T),
+            b1_avg = mean(b1, na.rm = T),b2_avg = mean(b2, na.rm = T),
+            b3_avg = mean(b3, na.rm = T),b4_avg = mean(b4, na.rm = T),
+            b5_avg = mean(b5, na.rm = T),b6_avg = mean(b6, na.rm = T),
+            b7_avg = mean(b7, na.rm = T),EVI_avg = mean(EVI, na.rm = T),
+            GCI_avg = mean(GCI, na.rm = T),NDVI_avg = mean(NDVI, na.rm = T),
+            NDWI_avg = mean(NDWI, na.rm = T),NIRv_avg = mean(NIRv, na.rm = T),
+            kNDVI_avg = mean(kNDVI, na.rm = T),
+            Percent_Snow_avg = mean(Percent_Snow, na.rm = T),
+            Fpar_avg = mean(Fpar, na.rm = T),Lai_avg = mean(Lai, na.rm = T),
+            LST_Day_avg = mean(LST_Day, na.rm = T),
+            LST_Night_avg = mean(LST_Night, na.rm = T),
+            CO2_concentration_avg = mean(CO2_concentration, na.rm = T)
+                        )
+
+# Merge categorical variables
+
+# raw_df_categorical_ <- raw_df_categorical %>%
+#   dplyr::select(-c(SITE_IGBP)) # drop SITE_IGBP to avoid two variables in one df
+# SITE_month_df <- merge(x = SITE_month_df, y = raw_df_categorical_,
+#                        by="SITE_ID", all.x = TRUE)
+# 
+# # Add longitude/latitude to monthly df
+# raw_df_geo <- raw_df_hemisphere %>% dplyr::select(SITE_ID, LOCATION_LAT, LOCATION_LONG)
+# SITE_month_df <- merge(x = SITE_month_df, y = raw_df_geo,
+#                        by="SITE_ID", all.x = TRUE)
+# raw_df_ts_month <- raw_df %>% as_tsibble(index=month)
+```
+```{r}
+head(SITE_month_df)
+```
+
+
+## Add site-unique categorical variables to monthly average dataframe
+```{r}
+# Merge categorical variables
+raw_df_categorical_ <- raw_df_categorical %>%
+  dplyr::select(-c(SITE_IGBP)) # drop SITE_IGBP to avoid two variables in one df
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_categorical_,
+                       by="SITE_ID", all.x = TRUE)
+
+# Add site-unique longitude/latitude to monthly df
+raw_df_geo <- raw_df_hemisphere %>% dplyr::select(SITE_ID, LOCATION_LAT, LOCATION_LONG)
+SITE_month_df <- merge(x = SITE_month_df, y = raw_df_geo,
+                       by="SITE_ID", all.x = TRUE)
+
+head(SITE_month_df)
+```
+
+### Export df to csv
+```{r}
+write.csv(SITE_month_df,
+          "../../../data/datasets/static_features_month_df.csv", row.names=FALSE)
+```
+
+```{r}
+SITE_month_df %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_DT_VUT_REF, plot_type="partial")
+```
+
+
+# Monthly transition of GPP and NEE by land-cover type
+```{r}
+IGBP_month_df %>% group_by(SITE_IGBP,hemisphere) %>% summarise(count = n())
+```
+
+```{r, fig.height=4, fig.width=10}
+library(scales)
+f3 <- IGBP_month_df %>% subset(SITE_IGBP == "MF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) + 
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("MF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f4 <- IGBP_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) + 
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DBF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f5 <- IGBP_month_df %>% subset(SITE_IGBP == "CRO") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CRO") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f6 <- IGBP_month_df %>% subset(SITE_IGBP == "WET") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("WET") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f7 <- IGBP_month_df %>% subset(SITE_IGBP == "GRA") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("GRA") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f8 <- IGBP_month_df %>% subset(SITE_IGBP == "EBF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) + 
+  ggtitle("EBF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f9 <- IGBP_month_df %>% subset(SITE_IGBP == "OSH") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) + 
+  ggtitle("OSH") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f10 <- IGBP_month_df %>% subset(SITE_IGBP == "WSA") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("WSA") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f11 <- IGBP_month_df %>% subset(SITE_IGBP == "SAV") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("SAV") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f12 <- IGBP_month_df %>% subset(SITE_IGBP == "CSH") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CSF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f13 <- IGBP_month_df %>% subset(SITE_IGBP == "ENF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("ENF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+f13  
+
+grid.arrange(f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, nrow = 2, ncol = 5)
+  # gg_tsdisplay(GPP_DT_VUT_REF_avg, plot_type="partial")
+```
+
+
+```{r, fig.height=4, fig.width=10}
+library(scales)
+f13 <- IGBP_month_df %>% subset(SITE_IGBP == "MF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) + 
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("MF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f14 <- IGBP_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) + 
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DBF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f15 <- IGBP_month_df %>% subset(SITE_IGBP == "CRO") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CRO") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f16 <- IGBP_month_df %>% subset(SITE_IGBP == "WET") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("WET") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f17 <- IGBP_month_df %>% subset(SITE_IGBP == "GRA") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("GRA") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f18 <- IGBP_month_df %>% subset(SITE_IGBP == "EBF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) + 
+  ggtitle("EBF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f19 <- IGBP_month_df %>% subset(SITE_IGBP == "OSH") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +  
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) + 
+  ggtitle("OSH") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f20 <- IGBP_month_df %>% subset(SITE_IGBP == "WSA") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("WSA") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f21 <- IGBP_month_df %>% subset(SITE_IGBP == "SAV") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("SAV") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f22 <- IGBP_month_df %>% subset(SITE_IGBP == "CSH") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) +   
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CSF") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f23 <- IGBP_month_df %>% subset(SITE_IGBP == "ENF") %>%
+  subset(hemisphere == "N") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_VUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_VUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("ENF") +
+  theme(# legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+f23  
+
+grid.arrange(f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, nrow = 2, ncol = 5)
+  # gg_tsdisplay(GPP_DT_VUT_REF_avg, plot_type="partial")
+```
+ 
+```{r}
+SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  group_by(SITE_ID, SITE_IGBP) %>%
+  summarise(count = n())
+  
+```
+ 
+ 
+```{r, fig.height=4, fig.width=10}
+
+f25 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "CA-Cbo") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CA-Cbo") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f26 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "CA-Oas") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CA-Oas") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f27 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "CA-TPD") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CA-TPD") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+
+f28 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "CZ-Lnz") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CZ-Lnz") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f29 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "CZ-Stn") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("CZ-Stn") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+
+f30 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "DE-Hai") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DE-Hai") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f31 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "DE-HoH") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DE-HoH") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+
+f32 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "DE-Hzd") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DE-Hzd") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f33 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "DE-Lnf") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DE-Lnf") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+f34 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+  subset(SITE_ID == "DK-Sor") %>%
+  ggplot(aes(x=month)) +
+  geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+  geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+  scale_x_continuous(breaks= pretty_breaks()) +
+  ggtitle("DK-Sor") +
+  theme(legend.position="none",
+        axis.title.x = element_text(size = 6),
+        axis.title.y = element_text(size = 6),
+        title = element_text(size = 8)) + ylim(0, 12.5)
+
+# f34 <- SITE_month_df %>% subset(SITE_IGBP == "DBF") %>%
+#   subset(SITE_ID == "CA-Oas") %>%
+#   ggplot(aes(x=month)) +
+#   geom_line(aes(y=GPP_DT_CUT_REF_avg, colour="DT")) + 
+#   geom_line(aes(y=GPP_NT_CUT_REF_avg, colour="NT")) +
+#   scale_x_continuous(breaks= pretty_breaks()) +
+#   ggtitle("CA-Oas") +
+#   theme(legend.position="none",
+#         axis.title.x = element_text(size = 6),
+#         axis.title.y = element_text(size = 6),
+#         title = element_text(size = 8)) + ylim(0, 12.5)
+
+grid.arrange(f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, 
+             nrow = 2, ncol = 5) #f34, 
+```
+ 
+ 
+
+```{r, fig.width=5, fig.height=3.5}
+# GPP_DT_VUT_REF in DE-Seh
+print("GPP_DT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_DT_VUT_REF, plot_type="partial")
+
+# GPP_NT_VUT_REF in DE-Seh
+print("GPP_NT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_NT_VUT_REF, plot_type="partial")
+  
+# NEE_VUT_REF in DE-Seh
+print("NEE_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF, plot_type="partial")
+
+# NEE_VUT_REF_QC in DE-Seh
+print("NEE_VUT_REF_QC in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF_QC, plot_type="partial")
+
+```
+```{r, fig.width=5, fig.height=4}
+```
+
+
+```{r}
+IGBP_month_df %>% subset(SITE_IGBP == "CRO") %>%
+  subset(hemisphere == "N") %>%
+  as_tsibble(index = month) %>% 
+  gg_tsdisplay(GPP_DT_VUT_REF_avg, plot_type="partial")
+```
+
+```{r, fig.width=5, fig.height=3.5}
+# GPP_DT_VUT_REF in DE-Seh
+print("GPP_DT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_DT_VUT_REF, plot_type="partial")
+
+# GPP_NT_VUT_REF in DE-Seh
+print("GPP_NT_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(GPP_NT_VUT_REF, plot_type="partial")
+  
+# NEE_VUT_REF in DE-Seh
+print("NEE_VUT_REF in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF, plot_type="partial")
+
+# NEE_VUT_REF_QC in DE-Seh
+print("NEE_VUT_REF_QC in DE-Seh")
+raw_df_hemisphere %>% subset(SITE_ID == "DE-Seh") %>%
+  subset(hemisphere == "N") %>%
+  mutate(time_to_date = yearmonth(as.Date(time, format = "%m/%d/%y"))) %>%
+  as_tsibble(index = time_to_date) %>%
+  tsibble::fill_gaps() %>%
+  gg_tsdisplay(NEE_VUT_REF_QC, plot_type="partial")
+
+```
+```{r, fig.width=5, fig.height=4}
+```
+
+
+```{r}
+
+```
+```{r}
+
+```
+```{r}
+```
+
+# Appendix
+# Summary statistics of features
+Rows: 19015
+Columns: 62
+
+```{r}
+describe(raw_df)
+```
+
+
+
+
+
+
+
+
+
+
+
