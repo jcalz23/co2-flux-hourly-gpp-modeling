@@ -24,7 +24,7 @@ def data_cleanup(data_dir, site_id_file_df, target, target_qc, features):
 
     # Get only `features` from file
     local_filename = data_dir + os.sep + r.filename
-    site_df = pd.read_csv(local_filename, usecols = features +  target + target_qc)
+    site_df = pd.read_csv(local_filename, usecols = features +  [target, target_qc])
     site_df['datetime'] = pd.to_datetime(site_df['datetime'])
     site_df['date'] = pd.to_datetime(site_df['date'])
     site_df['minute'] = site_df['datetime'].dt.minute
@@ -36,11 +36,11 @@ def data_cleanup(data_dir, site_id_file_df, target, target_qc, features):
     site_df.drop(site_df[site_df['SW_IN_ERA'] <= 0].index, inplace = True)
 
     # Drop rows with NAs for Target Variable
-    site_df.dropna(subset=target, axis=0, inplace=True)
+    site_df.dropna(subset=[target], axis=0, inplace=True)
 
     # Drop rows with bad NEE_VUT_REF_QC (aka bad GPP records)
-    site_df.drop(site_df[site_df[target_qc[0]] == 3].index, inplace = True)
-    site_df.drop(target_qc, axis=1, inplace=True)
+    site_df.drop(site_df[site_df[target_qc] == 3].index, inplace = True)
+    site_df.drop([target_qc], axis=1, inplace=True)
 
     # Drop rows with any NA
     site_df.dropna(axis=0, inplace=True)
