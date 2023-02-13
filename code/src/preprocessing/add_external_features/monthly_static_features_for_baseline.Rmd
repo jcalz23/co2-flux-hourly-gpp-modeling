@@ -48,7 +48,7 @@ https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNG
 
 ## Overview of monthly dataset
 ```{r, message=FALSE, warning=FALSE}
-raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+raw_df <- read_csv("../../../../data/datasets/data_monthly_v1_0.csv")
 glimpse(raw_df)
 ```
 # 1. Quick EDA
