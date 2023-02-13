@@ -48,7 +48,7 @@ https://docs.google.com/spreadsheets/d/1-FQsF_sxnA6iBMNpHmGovkj9Xev6BCYg2j3PojNG
 
 ## Overview of monthly dataset
 ```{r, message=FALSE, warning=FALSE}
-raw_df <- read_csv("../../../data/datasets/data_monthly_v1_0.csv")
+raw_df <- read_csv("../../../../data/datasets/data_monthly_v1_0.csv")
 glimpse(raw_df)
 ```
 # 1. Quick EDA
@@ -131,16 +131,24 @@ Since they only have 243 rows by removing all the duplicates,
 all the categorical variables has unique values in each site.
 ```{r}
 raw_df_categorical <- raw_df_hemisphere %>%
-  dplyr::select(SITE_ID, SITE_IGBP, dataset, MODIS_IGBP, MODIS_PFT, 
+  dplyr::select(SITE_ID, SITE_IGBP, dataset, MODIS_LC, MODIS_IGBP, MODIS_PFT, 
          koppen_sub, koppen, hemisphere) %>% 
   distinct() #drop duplicates
   
 head(raw_df_categorical)
+nrow(raw_df_categorical)
 ```
 ```{r}
 raw_df_categorical %>% 
   distinct(koppen) %>%
   as.list()
+```
+```{r}
+raw_df_categorical %>% 
+  distinct(MODIS_LC) %>%
+  as.list()
+```
+
 ```
 
 ### Unique values of categorical variables
@@ -148,6 +156,8 @@ raw_df_categorical %>%
 - SITE_ID: 243
 - SITE_IGBP: 11
   - MF, ENF, GRA, SAV, WSA, EBF, WET, OSH, DBF, CRO, CSH
+- MODIS_LC: 
+  - 7  9  5  6 10  1  2  8  4 12 17 16 13 11
 - MODIS_IGBP: 14 
   - OSH, SAV, MF, CSH, GRA, ENF, EBF, WSA, DBF, CRO, WAT, BSV, URB, WET
 - MODIS_PFT: 14 
@@ -318,9 +328,14 @@ Missing values
 ```{r}
 # describe(SITE_month_df_2_NA)
 ```
+```{r}
+nrow(SITE_month_df_2)
+```
+
+
 ### Export csv
 ```{r}
-write.csv(SITE_month_df,
+write.csv(SITE_month_df_2,
           "../../../data/datasets/static_features_month_df_raw.csv", row.names=FALSE)
 ```
 
@@ -329,16 +344,16 @@ write.csv(SITE_month_df,
 
 ### P_F_avg
 ```{r}
-SITE_month_df_2_NA %>%
-  subset(P_F_avg == "NaN")
+# SITE_month_df_2_NA %>%
+#   subset(P_F_avg == "NaN")
 ```
 ```{r}
-SITE_month_df_2_NA %>%
-  subset(SITE_ID == "FI-Ken")
+# SITE_month_df_2_NA %>%
+#   subset(SITE_ID == "FI-Ken")
 ```
 ```{r}
-raw_df %>%
-   subset(SITE_ID == "FI-Ken")
+# raw_df %>%
+#    subset(SITE_ID == "FI-Ken")
 ```
 ```{r}
 # Calculate average of site and fill NA with average value
@@ -350,8 +365,8 @@ print(P_F_avg_FI_Ken)
 SITE_month_df_2$P_F_avg[is.na(SITE_month_df_2$P_F_avg)] <- P_F_avg_FI_Ken
 ```
 ```{r}
-SITE_month_df_2 %>%
-  subset(SITE_ID == "FI-Ken")
+# SITE_month_df_2 %>%
+#   subset(SITE_ID == "FI-Ken")
 ```
 
 ### NETRAD_avg
@@ -395,23 +410,17 @@ NETRAD_avg_US_GBT <- SITE_month_df_2 %>%
   drop_na(NETRAD_avg) %>% select(NETRAD_avg) %>% colMeans()
 ```
 
-```{r}
-SITE_month_df_2
-```
-
 
 ```{r}
 # Impute missing data
-SITE_month_df_2
 SITE_month_df_2[SITE_month_df_2$SITE_ID == "AR-Vir" && NETRAD_avg == "NaN"] <- NETRAD_avg_AR_Vir
-SITE_month_df_2 %>% subset(SITE_ID == "AR-Vir" & NETRAD_avg == "NaN") %>% select(NETRAD_avg) 
+# SITE_month_df_2 %>% subset(SITE_ID == "AR-Vir" & NETRAD_avg == "NaN") %>% select(NETRAD_avg) 
 # <- P_F_avg_FI_Ken
-NETRAD_avg_AR_Vir
+# NETRAD_avg_AR_Vir
 ```
 
 
 ```{r}
-SITE_month_df_2$P_F_avg[is.na(SITE_month_df_2$NETRAD_avgP_F_avg)] <- P_F_avg_FI_Ken
- 
+# SITE_month_df_2$P_F_avg[is.na(SITE_month_df_2$NETRAD_avgP_F_avg)] <- P_F_avg_FI_Ken
 ```
 
