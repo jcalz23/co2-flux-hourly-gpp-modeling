@@ -24,7 +24,7 @@ def data_cleanup(data_dir, site_id_file_df, target, target_qc, features):
 
     # Get only `features` from file
     local_filename = data_dir + os.sep + r.filename
-    site_df = pd.read_csv(local_filename, usecols = features +  [target, target_qc])
+    site_df = pd.read_csv(local_filename, usecols = [target, target_qc] + features)
     site_df['datetime'] = pd.to_datetime(site_df['datetime'])
     site_df['date'] = pd.to_datetime(site_df['date'])
     site_df['minute'] = site_df['datetime'].dt.minute
