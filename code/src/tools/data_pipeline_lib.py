@@ -40,6 +40,9 @@ def data_cleanup(data_dir, site_id_file_df, target, target_qc, features):
       site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
     site_df['site_id'] = r.site_id
 
+    # Add time index columns
+    site_df = add_time_index(site_df, 'datetime', '30T')
+
     # Remove zero or negative SW
     site_df.drop(site_df[site_df['SW_IN_ERA'] <= 0].index, inplace = True)
 
@@ -73,6 +76,16 @@ def check_and_drop_na(data_df):
   else:
     print("Datas has no NA.")
 
+def add_time_index(data_df, time_col, duration):
+  resampled_df = data_df.sort_values(by=[time_col])
+  resampled_df.set_index(time_col, inplace=True)
+  resampled_df = resampled_df.resample(duration).mean()
+  resampled_df = resampled_df.reset_index()
+  resampled_df.index.name='timestep_idx'
+  resampled_df = resampled_df.reset_index()
+  data_df = data_df.merge(resampled_df[[time_col, 'timestep_idx']], how='left', on='datetime')
+  return data_df
+
 class PySparkMLDataTransformer:
   def __init__(self, spark_session, train_sites, test_sites, \
                data_file_path = None, data_df = None, ):
@@ -97,9 +110,9 @@ class PySparkMLDataTransformer:
       self.data_df = self.data_df.drop(*['date'])
     print(f"Data loaded: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
   
-  def data_transform(self, categorical_cols, timestamp_col, target_col):
+  def data_transform(self, categorical_cols, timestamp_cols, target_col):
     self.categorical_cols = categorical_cols
-    self.timestamp_col =  timestamp_col
+    self.timestamp_cols =  timestamp_cols
     self.target_col =  target_col
 
     # One-Hot Encoding
@@ -115,9 +128,8 @@ class PySparkMLDataTransformer:
     # Get Features
     features = self.data_df.columns
     features.remove(target_col)
-    features.remove(timestamp_col)
     features.remove('site_id')
-    for f in categorical_cols:
+    for f in categorical_cols + timestamp_cols:
       features.remove(f)
     print(f"Features({len(features)}): {features}")
 
@@ -201,7 +213,7 @@ class TFTDataTransformer:
 
   def data_transform(self, categorical_cols, realNum_cols,\
                      backup_cols,\
-                     timestamp_col, target_col):
+                     timestamp_cols, target_col):
     data_df = self.data_df
     # backup
     for f in backup_cols:
@@ -216,8 +228,8 @@ class TFTDataTransformer:
     # Get features
     features = data_df.columns.to_list()
     features.remove(target_col)
-    features.remove(timestamp_col)
-
+    for f in timestamp_cols:
+      features.remove(f)
     for f in [x+"_name" for x in backup_cols]:
       features.remove(f)
     print(f"Features({len(features)}): {features}")
