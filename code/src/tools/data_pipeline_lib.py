@@ -235,8 +235,11 @@ class TFTDataTransformer:
     print(f"Features({len(features)}): {features}")
     
     # Split into train and test sets
-    train_df = data_df[data_df['site_id_name'].isin(self.train_sites)]
-    test_df  = data_df[data_df['site_id_name'].isin(self.test_sites)]
+    train_df = data_df.loc[data_df['site_id'].isin(self.train_sites), ]
+    test_df  = data_df.loc[data_df['site_id'].isin(self.test_sites), ]
+    print(f"Unique sites in df: {data_df['site_id'].unique()}")
+    print(f"Passed train: {self.train_sites}")
+    print(f"Passed test: {self.test_sites}")
     print(f"Train data size: {train_df.shape}.")
     print(f"Test data size: {test_df.shape}.")
 
