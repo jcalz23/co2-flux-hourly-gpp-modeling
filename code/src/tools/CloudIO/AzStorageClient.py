@@ -45,7 +45,7 @@ class AzStorageClient:
     def uploadBlob(self, container_name, blob_name, data, overwrite=False, verbose=True):
         if self.blob_svc_client:
             blob_cleint = self.blob_svc_client.get_blob_client(container=container_name, blob=blob_name)
-            blob_cleint.upload_blob(data, overwrite=overwrite)
+            blob_cleint.upload_blob(data, overwrite=overwrite, connection_timeout=600)
             if verbose:
                 print(f'File uploaded to {container_name}/{blob_name}')
         else:

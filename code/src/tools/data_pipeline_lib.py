@@ -211,48 +211,31 @@ class TFTDataTransformer:
     self.test_df = test_df
     return (train_df, test_df)
 
-  def data_transform(self, categorical_cols, realNum_cols,\
-                     backup_cols,\
-                     timestamp_cols, target_col):
+  def data_transform(self, categorical_cols, realNum_cols, non_transform_cols):
     data_df = self.data_df
-    # backup
-    for f in backup_cols:
-      data_df[f+'_name'] = data_df[f]
     print(f"Data size: {self.data_df.shape}.")
 
     # Label encode the categorical columns
     data_df[categorical_cols] = data_df[categorical_cols].apply(LabelEncoder().fit_transform)
     print(f"Data size after encoding: {data_df.shape}")
-    display(data_df.head())
-
-    # Get features
-    features = data_df.columns.to_list()
-    features.remove(target_col)
-    for f in timestamp_cols:
-      features.remove(f)
-    for f in [x+"_name" for x in backup_cols]:
-      features.remove(f)
-    print(f"Features({len(features)}): {features}")
     
     # Split into train and test sets
-    train_df = data_df.loc[data_df['site_id'].isin(self.train_sites), ]
-    test_df  = data_df.loc[data_df['site_id'].isin(self.test_sites), ]
-    print(f"Unique sites in df: {data_df['site_id'].unique()}")
-    print(f"Passed train: {self.train_sites}")
-    print(f"Passed test: {self.test_sites}")
-    print(f"Train data size: {train_df.shape}.")
-    print(f"Test data size: {test_df.shape}.")
+    train_df = data_df.loc[data_df['site_id'].isin(self.train_sites), ].copy()
+    test_df  = data_df.loc[data_df['site_id'].isin(self.test_sites), ].copy()
+    print(f"Number of sites in df: {len(data_df['site_id'].unique())}")
+    print(f"Train Sites: {self.train_sites}")
+    print(f"Test Sites: {self.test_sites}")
 
     # Normalize data
-    for f in categorical_cols:
-      features.remove(f)
-    print(f"Normalizinf features ({len(features)}): {features}")
-
-    scaler = StandardScaler().fit(train_df[features])
-    train_df.loc[:,features] = scaler.transform(train_df[features])
-    test_df.loc[:,features] = scaler.transform(test_df[features])
+    print(f"Normalizing real features ({len(realNum_cols)})")
+    scaler = StandardScaler().fit(train_df[realNum_cols])
+    train_df.loc[:,realNum_cols] = scaler.transform(train_df[realNum_cols])
+    test_df.loc[:,realNum_cols] = scaler.transform(test_df[realNum_cols])
+    
     print(f"Train data size: {train_df.shape}.")
-    print(f"Test data size: {test_df.shape}.")
+    print(f"Test data size: {test_df.shape}.")  
+    train_df.reset_index(inplace=True, drop=True)
+    test_df.reset_index(inplace=True, drop=True)
 
     self.train_df = train_df
     self.test_df = test_df
