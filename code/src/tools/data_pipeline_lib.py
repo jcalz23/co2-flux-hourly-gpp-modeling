@@ -359,7 +359,7 @@ class PrepareAllSitesHourly:
                         left_on =['site_id', 'year', 'month'],
                         right_on=['SITE_ID', 'year', 'month'])
         data_df.drop('SITE_ID', axis=1, inplace=True)
-        print(f"Data size after after merged with site metadata: {data_df.shape}")
+        print(f"Data size after after merged with monthly data: {data_df.shape}")
 
         if data_df.isna().sum().sum() != 0:
             print(f"{data_df.isna().sum().sum()} missing values introduced after monthly merge")
