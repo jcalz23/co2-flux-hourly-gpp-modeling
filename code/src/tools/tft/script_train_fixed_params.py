@@ -182,8 +182,11 @@ def main(expt_name,
         0.9)
 
     output_df = pd.DataFrame.from_dict([output_map])
-    os.makedirs(result_folder)
-    output_df.to_csv(os.path.join(result_folder, "prediction.csv"))
+    if not (os.path.exists(result_folder)):
+      os.makedirs(result_folder)
+    now = dte.datetime.now()
+    filename = "prediction_" + now.strftime("%m%d_%H%M") + ".csv"
+    output_df.to_csv(os.path.join(result_folder, filename))
 
     tf.keras.backend.set_session(default_keras_session)
 
