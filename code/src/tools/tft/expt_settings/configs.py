@@ -73,6 +73,10 @@ class ExperimentConfig(object):
   @property
   def data_dir(self):
     return self.data_folder
+  
+  @property
+  def results_dir(self):
+    return self.results_folder
 
   @property
   def data_csv_path(self):

@@ -86,9 +86,11 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
       train_sites = ['US-NR1', 'IT-Lav']
 
     if valid_sites is None:
+      # valid_sites = ['US-GLE', 'US-AR1', 'US-Seg', 'US-FR2', 'ES-LM2']
       valid_sites = ["US-Vcp"]
 
     if test_sites is None:
+      # test_sites = ['CA-Cbo', 'FR-Lam', 'IT-Cpz', 'CN-Cha', 'IT-Lsn']
       test_sites = ["US-GLE"]
 
     column_definitions = self.get_column_definition()

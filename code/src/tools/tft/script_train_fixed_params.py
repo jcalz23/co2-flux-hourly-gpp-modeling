@@ -49,6 +49,7 @@ ModelClass = libs_v2.tft_model.TemporalFusionTransformer
 def main(expt_name,
          use_gpu,
          model_folder,
+         result_folder,
          data_csv_path,
          data_formatter,
          use_testing_mode=False):
@@ -58,6 +59,7 @@ def main(expt_name,
     expt_name: Name of experiment
     use_gpu: Whether to run tensorflow with GPU operations
     model_folder: Folder path where models are serialized
+    result_folder: Folder path for prediciton result
     data_csv_path: Path to csv file containing data
     data_formatter: Dataset-specific data fromatter (see
       expt_settings.dataformatter.GenericDataFormatter)
@@ -179,6 +181,10 @@ def main(expt_name,
         extract_numerical_data(targets), extract_numerical_data(p90_forecast),
         0.9)
 
+    output_df = pd.DataFrame.from_dict([output_map])
+    os.makedirs(result_folder)
+    output_df.to_csv(os.path.join(result_folder, "prediction.csv"))
+
     tf.keras.backend.set_session(default_keras_session)
 
   print("Training completed @ {}".format(dte.datetime.now()))
@@ -242,6 +248,7 @@ if __name__ == "__main__":
       expt_name=name,
       use_gpu=use_tensorflow_with_gpu,
       model_folder=os.path.join(config.model_folder, "fixed"),
+      result_folder=os.path.join(config.results_dir, "fixed"),
       data_csv_path=config.data_csv_path,
       data_formatter=formatter,
       use_testing_mode=True)  # Change to false to use original default params
