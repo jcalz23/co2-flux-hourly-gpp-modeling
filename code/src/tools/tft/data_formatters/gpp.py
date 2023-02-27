@@ -81,18 +81,7 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
     """
 
     print('Formatting train-valid-test splits.')
-
-    if train_sites is None:
-      train_sites = ['US-NR1', 'IT-Lav']
-
-    if valid_sites is None:
-      valid_sites = ['ES-LM2', 'US-AR1', 'US-GLE']
-      # valid_sites = ["US-Vcp"]
-
-    if test_sites is None:
-      test_sites = [ 'US-Seg', 'CA-Cbo', 'FR-Lam']
-      # test_sites = ["US-GLE"]
-
+    
     column_definitions = self.get_column_definition()
     id_column = utils.get_single_col_by_input_type(InputTypes.ID,
                                                 column_definitions)
@@ -103,11 +92,13 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
     self.set_scalers(train, set_real=True)
 
     # Use all data for label encoding to handle labels not present in training.
+    
     self.identifiers = list(df[id_column].unique())
     self.set_scalers(df, set_real=False)
 
     # Filter out identifiers not present in training (i.e. cold-started items).
-    # train = df[df[id_column].isin(train_sites)]
+    if not (train_sites is None):
+      train = df[df[id_column].isin(train_sites)]
     valid = df[df[id_column].isin(valid_sites)]
     test = df[df[id_column].isin(test_sites)]
 
@@ -220,7 +211,7 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
     """Returns fixed model parameters for experiments."""
 
     fixed_params = {
-        'total_time_steps': 8*24,
+        'total_time_steps': (7*24) + 6,
         'num_encoder_steps': 7*24,
         'num_epochs': 100,
         'early_stopping_patience': 5,

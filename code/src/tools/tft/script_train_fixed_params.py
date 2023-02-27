@@ -39,6 +39,7 @@ import libs_v2.tft_model
 import libs_v2.utils as utils
 import numpy as np
 import pandas as pd
+import pickle
 import tensorflow.compat.v1 as tf
 
 ExperimentConfig = expt_settings.configs.ExperimentConfig
@@ -86,19 +87,18 @@ def main(expt_name,
   print("*** Training from defined parameters for {} ***".format(expt_name))
 
   print("Loading & splitting data...")
-  # columns = [
-  #     'site_id', 'datetime', 'GPP_NT_VUT_REF',
-  #     'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA','P_ERA', 'PA_ERA',
-  #     'year', 'month', 'day', 'hour',
-  #     'IGBP', 'koppen_main', 'koppen_sub',
-  #     'lat', 'long'
-  # ]
-  # print(columns)
+  # Sites definitions
+  train_sites = ['US-NR1', 'IT-Lav']
+  valid_sites = ["US-Vcp"] # ['ES-LM2', 'US-AR1', 'US-GLE']
+  test_sites = ["US-GLE"]  # ['US-Seg', 'CA-Cbo', 'FR-Lam']
+  
   raw_data = pd.read_csv(data_csv_path, index_col=0)
-  train, valid, test = data_formatter.split_data(raw_data)
+  train, valid, test = data_formatter.split_data(raw_data, train_sites, valid_sites, test_sites)
+  
   print(f"Train size: {train.shape} from {train['site_id'].unique()}")
   print(f"Valid size: {valid.shape} from {valid['site_id'].unique()}")
   print(f"Test size: {test.shape} from {test['site_id'].unique()}")
+  
   train_samples, valid_samples = data_formatter.get_num_samples_for_calibration()
 
   # Sets up default params
@@ -181,13 +181,15 @@ def main(expt_name,
         extract_numerical_data(targets), extract_numerical_data(p90_forecast),
         0.9)
 
-    output_df = pd.DataFrame.from_dict([output_map])
+    now = dte.datetime.now()
     if not (os.path.exists(result_folder)):
       os.makedirs(result_folder)
-    now = dte.datetime.now()
-    filename = "prediction_" + now.strftime("%m%d_%H%M") + ".csv"
-    output_df.to_csv(os.path.join(result_folder, filename))
-
+     
+    for k in output_map:
+      filepath = os.path.join(result_folder, f'pred_{now.strftime("%m%d_%H%M")}_{k}.csv')
+      output_map[k].to_csv(filepath)
+      print(f"Model evaluation {k} saved to {filepath}.")
+    
     tf.keras.backend.set_session(default_keras_session)
 
   print("Training completed @ {}".format(dte.datetime.now()))

@@ -33,6 +33,7 @@ import libs_v2.utils as utils
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from IPython.display import display
 
 # Layer definitions.
 concat = tf.keras.backend.concatenate
@@ -1226,6 +1227,8 @@ class TemporalFusionTransformer(object):
         workers=16,
         use_multiprocessing=True,
         batch_size=self.minibatch_size)
+
+    display(combined)
 
     # Format output_csv
     if self.output_size != 1:
