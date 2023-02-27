@@ -81,7 +81,22 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
     """
 
     print('Formatting train-valid-test splits.')
+<<<<<<< HEAD
     
+=======
+
+    if train_sites is None:
+      train_sites = ['US-NR1', 'IT-Lav']
+
+    if valid_sites is None:
+      valid_sites = ['ES-LM2', 'US-AR1', 'US-GLE']
+      # valid_sites = ["US-Vcp"]
+
+    if test_sites is None:
+      test_sites = [ 'US-Seg', 'CA-Cbo', 'FR-Lam']
+      # test_sites = ["US-GLE"]
+
+>>>>>>> b9757a19c3aae6d8ca97856d94e1cf0f3b6d2f5a
     column_definitions = self.get_column_definition()
     id_column = utils.get_single_col_by_input_type(InputTypes.ID,
                                                 column_definitions)
@@ -97,8 +112,12 @@ class GppFormatter(data_formatters.base.GenericDataFormatter):
     self.set_scalers(df, set_real=False)
 
     # Filter out identifiers not present in training (i.e. cold-started items).
+<<<<<<< HEAD
     if not (train_sites is None):
       train = df[df[id_column].isin(train_sites)]
+=======
+    # train = df[df[id_column].isin(train_sites)]
+>>>>>>> b9757a19c3aae6d8ca97856d94e1cf0f3b6d2f5a
     valid = df[df[id_column].isin(valid_sites)]
     test = df[df[id_column].isin(test_sites)]
 
