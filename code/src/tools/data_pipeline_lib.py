@@ -332,7 +332,10 @@ class PrepareAllSitesHourly:
 
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
-        site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.test_sites), ]
+        
+        if self.train_sites is not None and self.test_sites is not None:
+          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.test_sites), ]
+        
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
         return site_metadata_df
@@ -379,36 +382,39 @@ class PrepareAllSitesHourly:
 
         ## SITE-LEVEL CLEANING -> CONCATENATE
         for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):        
-            if not r.filename or type(r.filename) != type(""):
-                print(f'ERROR: {r.site_id} is missing hourly data.')
-                continue
-            else:
-                available_site_count += 1
+          if not r.filename or type(r.filename) != type(""):
+              print(f'ERROR: {r.site_id} is missing hourly data.')
+              continue
+          else:
+              available_site_count += 1
 
-            # Prepare hourly site df
-            local_filename = self.data_dir + os.sep + r.filename
-            site_df = pd.read_csv(local_filename, usecols = [self.target_variable, self.target_variable_qc] + self.hourly_features)
+          # Prepare hourly site df
+          local_filename = self.data_dir + os.sep + r.filename
+          site_df = pd.read_csv(local_filename, usecols = [self.target_variable, self.target_variable_qc] + self.hourly_features)
 
-            # Format columns
-            site_df['datetime'] = pd.to_datetime(site_df['datetime'])
-            site_df['date'] = pd.to_datetime(site_df['date'])
-            site_df['minute'] = site_df['datetime'].dt.minute
-            if len(qc_flags_features) != 0:
-                site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
-            site_df['site_id'] = r.site_id
+          # Format columns
+          site_df['datetime'] = pd.to_datetime(site_df['datetime'])
+          site_df['date'] = pd.to_datetime(site_df['date'])
+          site_df['minute'] = site_df['datetime'].dt.minute
+          if len(qc_flags_features) != 0:
+              site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
+          site_df['site_id'] = r.site_id
 
-            # Move from HH to H level
-            site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
-            site_df.drop('minute', axis=1, inplace=True)
+          # Move from HH to H level
+          site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
+          site_df.drop('minute', axis=1, inplace=True)
             
+          try:
             # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
-            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            if start_date is not None and end_date is not None:
+              site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            
             if site_df is None:
                 continue
             else:
                 retained_site_count += 1
                 num_records += len(site_df)
-
+            
             # For records with bad target QC, make NAN and impute
             site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan
             site_df.drop([self.target_variable_qc], axis=1, inplace=True)
@@ -421,25 +427,27 @@ class PrepareAllSitesHourly:
                 site_df = site_df.reset_index()
 
             # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-            random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+            if self.train_sites is not None and self.test_sites is not None:
+              random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+            else:
+              random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
+            
             if i == random_check:   
                 site_df_pre_imp = site_df.copy()
-
+            
             # Impute missing values at site-level, otherwise fillna w/ -1 at very end
             if (impute) & (site_df.isna().sum().sum() != 0):
                 if impute_method=='ffill': # select most recent record
                     site_df.sort_values(time_col, ascending=True, inplace=True)
                     site_df.fillna(method="ffill", inplace=True)
-                    
                 elif impute_method=='knn': # use KNNImputer
                     site_df = self.knn_impute(site_df, imp_cols, k, weights, n_fit)
-
                 elif impute_method=='constant':
                     site_df[imp_cols] = site_df[imp_cols].fillna(c)
 
             if i == random_check:
                 self.check_imputation(site_df_pre_imp, site_df)
-
+            
             # Create local timestep_idx
             site_df.sort_values(time_col, ascending=True, inplace=True)
             site_df['timestep_idx_local'] = range(len(site_df))
@@ -450,6 +458,9 @@ class PrepareAllSitesHourly:
             else:
                 data_df = pd.concat([data_df, site_df])
 
+          except Exception as e:
+            print(f'ERROR: {r.site_id} run into error. Exception: {str(e)}')
+        # End all-site loop
 
         ## Global Data-DF Cleanup
         # Create global timestamp inds
