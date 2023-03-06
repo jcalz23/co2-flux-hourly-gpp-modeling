@@ -383,7 +383,7 @@ class PrepareAllSitesHourly:
         ## SITE-LEVEL CLEANING -> CONCATENATE
         for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):        
           if not r.filename or type(r.filename) != type(""):
-              print(f'ERROR: {r.site_id} is missing hourly data.')
+              print(f'SKIP: {r.site_id} is missing hourly data.')
               continue
           else:
               available_site_count += 1
@@ -410,11 +410,12 @@ class PrepareAllSitesHourly:
               site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
             
             if site_df is None:
+                print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
                 continue
             else:
                 retained_site_count += 1
                 num_records += len(site_df)
-            
+            print(f'Processing: {i+1}. {r.site_id}')
             # For records with bad target QC, make NAN and impute
             site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan
             site_df.drop([self.target_variable_qc], axis=1, inplace=True)
