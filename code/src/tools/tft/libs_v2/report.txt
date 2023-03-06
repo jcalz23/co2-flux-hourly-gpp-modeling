@@ -1,0 +1,29 @@
+TensorFlow 2.0 Upgrade Script
+-----------------------------
+Converted 1 files
+Detected 1 issues that require attention
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+File: tft_model.py
+--------------------------------------------------------------------------------
+tft_model.py:1349:4: WARNING: *.save requires manual check. (This warning is only applicable if the code saves a tf.Keras model) Keras model.save now saves to the Tensorflow SavedModel format by default, instead of HDF5. To continue saving to HDF5, add the argument save_format='h5' to the save() function.
+================================================================================
+Detailed log follows:
+
+================================================================================
+--------------------------------------------------------------------------------
+Processing file 'tft_model.py'
+ outputting to 'tft_model_v2.py'
+--------------------------------------------------------------------------------
+
+234:10: INFO: Added keywords to args of function 'tf.shape'
+235:7: INFO: Added keywords to args of function 'tf.shape'
+265:29: INFO: Added keywords to args of function 'tf.shape'
+941:15: INFO: Renamed 'tf.keras.layers.CuDNNLSTM' to 'tf.compat.v1.keras.layers.CuDNNLSTM'
+1038:9: INFO: Renamed 'tf.variable_scope' to 'tf.compat.v1.variable_scope'
+1284:27: INFO: Renamed 'tf.keras.backend.get_session' to 'tf.compat.v1.keras.backend.get_session'
+1349:4: WARNING: *.save requires manual check. (This warning is only applicable if the code saves a tf.Keras model) Keras model.save now saves to the Tensorflow SavedModel format by default, instead of HDF5. To continue saving to HDF5, add the argument save_format='h5' to the save() function.
+1350:8: INFO: Renamed 'tf.keras.backend.get_session' to 'tf.compat.v1.keras.backend.get_session'
+1373:10: INFO: Renamed 'tf.keras.backend.get_session' to 'tf.compat.v1.keras.backend.get_session'
+--------------------------------------------------------------------------------
+

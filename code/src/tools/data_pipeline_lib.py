@@ -7,9 +7,11 @@ import numpy as np
 from io import BytesIO
 from tqdm import tqdm
 from sklearn.impute import KNNImputer
-from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
-from pyspark.sql.functions import col
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
+  from pyspark.ml.feature import StringIndexer, OneHotEncoder, VectorAssembler, MinMaxScaler
+  from pyspark.sql.functions import col
 
 from IPython.display import display
 from CloudIO.AzStorageClient import AzStorageClient
@@ -330,7 +332,10 @@ class PrepareAllSitesHourly:
 
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
-        site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.test_sites), ]
+        
+        if self.train_sites is not None and self.test_sites is not None:
+          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.test_sites), ]
+        
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
         return site_metadata_df
@@ -359,7 +364,7 @@ class PrepareAllSitesHourly:
                         left_on =['site_id', 'year', 'month'],
                         right_on=['SITE_ID', 'year', 'month'])
         data_df.drop('SITE_ID', axis=1, inplace=True)
-        print(f"Data size after after merged with site metadata: {data_df.shape}")
+        print(f"Data size after after merged with monthly data: {data_df.shape}")
 
         if data_df.isna().sum().sum() != 0:
             print(f"{data_df.isna().sum().sum()} missing values introduced after monthly merge")
@@ -377,36 +382,40 @@ class PrepareAllSitesHourly:
 
         ## SITE-LEVEL CLEANING -> CONCATENATE
         for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):        
-            if not r.filename or type(r.filename) != type(""):
-                print(f'ERROR: {r.site_id} is missing hourly data.')
-                continue
-            else:
-                available_site_count += 1
+          if not r.filename or type(r.filename) != type(""):
+              print(f'SKIP: {r.site_id} is missing hourly data.')
+              continue
+          else:
+              available_site_count += 1
 
-            # Prepare hourly site df
-            local_filename = self.data_dir + os.sep + r.filename
-            site_df = pd.read_csv(local_filename, usecols = [self.target_variable, self.target_variable_qc] + self.hourly_features)
+          # Prepare hourly site df
+          local_filename = self.data_dir + os.sep + r.filename
+          site_df = pd.read_csv(local_filename, usecols = [self.target_variable, self.target_variable_qc] + self.hourly_features)
 
-            # Format columns
-            site_df['datetime'] = pd.to_datetime(site_df['datetime'])
-            site_df['date'] = pd.to_datetime(site_df['date'])
-            site_df['minute'] = site_df['datetime'].dt.minute
-            if len(qc_flags_features) != 0:
-                site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
-            site_df['site_id'] = r.site_id
+          # Format columns
+          site_df['datetime'] = pd.to_datetime(site_df['datetime'])
+          site_df['date'] = pd.to_datetime(site_df['date'])
+          site_df['minute'] = site_df['datetime'].dt.minute
+          if len(qc_flags_features) != 0:
+              site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
+          site_df['site_id'] = r.site_id
 
-            # Move from HH to H level
-            site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
-            site_df.drop('minute', axis=1, inplace=True)
+          # Move from HH to H level
+          site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
+          site_df.drop('minute', axis=1, inplace=True)
             
+          try:
             # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
-            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            if start_date is not None and end_date is not None:
+              site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            
             if site_df is None:
+                print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
                 continue
             else:
                 retained_site_count += 1
                 num_records += len(site_df)
-
+            print(f'Processing: {i+1}. {r.site_id}')
             # For records with bad target QC, make NAN and impute
             site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan
             site_df.drop([self.target_variable_qc], axis=1, inplace=True)
@@ -419,25 +428,27 @@ class PrepareAllSitesHourly:
                 site_df = site_df.reset_index()
 
             # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-            random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+            if self.train_sites is not None and self.test_sites is not None:
+              random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+            else:
+              random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
+            
             if i == random_check:   
                 site_df_pre_imp = site_df.copy()
-
+            
             # Impute missing values at site-level, otherwise fillna w/ -1 at very end
             if (impute) & (site_df.isna().sum().sum() != 0):
                 if impute_method=='ffill': # select most recent record
                     site_df.sort_values(time_col, ascending=True, inplace=True)
                     site_df.fillna(method="ffill", inplace=True)
-                    
                 elif impute_method=='knn': # use KNNImputer
                     site_df = self.knn_impute(site_df, imp_cols, k, weights, n_fit)
-
                 elif impute_method=='constant':
                     site_df[imp_cols] = site_df[imp_cols].fillna(c)
 
             if i == random_check:
                 self.check_imputation(site_df_pre_imp, site_df)
-
+            
             # Create local timestep_idx
             site_df.sort_values(time_col, ascending=True, inplace=True)
             site_df['timestep_idx_local'] = range(len(site_df))
@@ -448,6 +459,9 @@ class PrepareAllSitesHourly:
             else:
                 data_df = pd.concat([data_df, site_df])
 
+          except Exception as e:
+            print(f'ERROR: {r.site_id} run into error. Exception: {str(e)}')
+        # End all-site loop
 
         ## Global Data-DF Cleanup
         # Create global timestamp inds
@@ -500,105 +514,104 @@ class PrepareAllSitesHourly:
 
         return data_df
 
+if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
+    class PySparkMLDataTransformer:
+      def __init__(self, spark_session, train_sites, test_sites, \
+                  data_file_path = None, data_df = None, ):
+        
+        self.spark_session = spark_session
+        self.data_df = data_df 
+        self.train_df = None 
+        self.test_df = None 
+        self.train_sites = train_sites
+        self.test_sites = test_sites
+        self.scaler = None
 
-class PySparkMLDataTransformer:
-  def __init__(self, spark_session, train_sites, test_sites, \
-               data_file_path = None, data_df = None, ):
-    
-    self.spark_session = spark_session
-    self.data_df = data_df 
-    self.train_df = None 
-    self.test_df = None 
-    self.train_sites = train_sites
-    self.test_sites = test_sites
-    self.scaler = None
+        if type(data_df) == type(None):
+          if os.path.exists(data_file_path):
+            self.data_df = self.spark_session.read.parquet(data_file_path)
+            if '__index_level_0__' in self.data_df.columns:
+              self.data_df = self.data_df.drop(*['__index_level_0__'])
+          else:
+            print(f"ERROR: {data_file_path} not found.")
+        
+        if 'date' in self.data_df.columns:
+          self.data_df = self.data_df.drop(*['date'])
+        print(f"Data loaded: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
+      
+      def data_transform(self, categorical_cols, timestamp_cols, target_col):
+        self.categorical_cols = categorical_cols
+        self.timestamp_cols =  timestamp_cols
+        self.target_col =  target_col
 
-    if type(data_df) == type(None):
-      if os.path.exists(data_file_path):
-        self.data_df = self.spark_session.read.parquet(data_file_path)
-        if '__index_level_0__' in self.data_df.columns:
-          self.data_df = self.data_df.drop(*['__index_level_0__'])
-      else:
-        print(f"ERROR: {data_file_path} not found.")
-    
-    if 'date' in self.data_df.columns:
-      self.data_df = self.data_df.drop(*['date'])
-    print(f"Data loaded: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
-  
-  def data_transform(self, categorical_cols, timestamp_cols, target_col):
-    self.categorical_cols = categorical_cols
-    self.timestamp_cols =  timestamp_cols
-    self.target_col =  target_col
+        # One-Hot Encoding
+        string_indexer = StringIndexer(inputCols=categorical_cols, outputCols=[x + "_Index" for x in categorical_cols]) 
+        self.data_df = string_indexer.fit(self.data_df).transform(self.data_df)
+        one_hot_encoder  = OneHotEncoder(inputCols=string_indexer.getOutputCols(), outputCols=[x + "_OHE" for x in categorical_cols])
+        self.data_df = one_hot_encoder.fit(self.data_df).transform(self.data_df)
+        self.data_df = self.data_df.drop(*string_indexer.getOutputCols())
 
-    # One-Hot Encoding
-    string_indexer = StringIndexer(inputCols=categorical_cols, outputCols=[x + "_Index" for x in categorical_cols]) 
-    self.data_df = string_indexer.fit(self.data_df).transform(self.data_df)
-    one_hot_encoder  = OneHotEncoder(inputCols=string_indexer.getOutputCols(), outputCols=[x + "_OHE" for x in categorical_cols])
-    self.data_df = one_hot_encoder.fit(self.data_df).transform(self.data_df)
-    self.data_df = self.data_df.drop(*string_indexer.getOutputCols())
+        print(f"Data size after encoding: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
+        self.data_df.show(5, False)
 
-    print(f"Data size after encoding: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
-    self.data_df.show(5, False)
+        # Get Features
+        features = self.data_df.columns
+        features.remove(target_col)
+        features.remove('site_id')
+        for f in categorical_cols + timestamp_cols:
+          features.remove(f)
+        print(f"Features({len(features)}): {features}")
 
-    # Get Features
-    features = self.data_df.columns
-    features.remove(target_col)
-    features.remove('site_id')
-    for f in categorical_cols + timestamp_cols:
-      features.remove(f)
-    print(f"Features({len(features)}): {features}")
+        # Assemable Data
+        assembler = VectorAssembler(inputCols=features, outputCol="vectorized_features")
+        self.data_df = assembler.transform(self.data_df)
+        print(f"Data size after assembling: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
+        self.data_df.show(5, False)
 
-    # Assemable Data
-    assembler = VectorAssembler(inputCols=features, outputCol="vectorized_features")
-    self.data_df = assembler.transform(self.data_df)
-    print(f"Data size after assembling: {self.data_df.count()} rows x {len(self.data_df.columns)} columns.")
-    self.data_df.show(5, False)
+        # Split into train and test sets
+        train_df = self.data_df.filter(col('site_id').isin(self.train_sites))
+        test_df = self.data_df.filter(col('site_id').isin(self.test_sites))
+        print(f"Train data size: {train_df.count()} rows x {len(train_df.columns)} columns.")
+        print(f"Test data size: {test_df.count()} rows x {len(test_df.columns)} columns.")
 
-    # Split into train and test sets
-    train_df = self.data_df.filter(col('site_id').isin(self.train_sites))
-    test_df = self.data_df.filter(col('site_id').isin(self.test_sites))
-    print(f"Train data size: {train_df.count()} rows x {len(train_df.columns)} columns.")
-    print(f"Test data size: {test_df.count()} rows x {len(test_df.columns)} columns.")
+        print("Train data peak:")
+        train_df.show(5, False)
+        print("Test data peak:")
+        test_df.show(5, False)
 
-    print("Train data peak:")
-    train_df.show(5, False)
-    print("Test data peak:")
-    test_df.show(5, False)
+        # Normalize data
+        self.scaler = MinMaxScaler(inputCol='vectorized_features', outputCol='features').fit(train_df)
+        train_df = self.scaler.transform(train_df)
+        test_df = self.scaler.transform(test_df)
 
-    # Normalize data
-    self.scaler = MinMaxScaler(inputCol='vectorized_features', outputCol='features').fit(train_df)
-    train_df = self.scaler.transform(train_df)
-    test_df = self.scaler.transform(test_df)
+        train_df = train_df.drop(*['vectorized_features'])
+        test_df = test_df.drop(*['vectorized_features'])
+        print(f"Train data size: {train_df.count()} rows x {len(train_df.columns)} columns.")
+        print(f"Test data size: {test_df.count()} rows x {len(test_df.columns)} columns.")
 
-    train_df = train_df.drop(*['vectorized_features'])
-    test_df = test_df.drop(*['vectorized_features'])
-    print(f"Train data size: {train_df.count()} rows x {len(train_df.columns)} columns.")
-    print(f"Test data size: {test_df.count()} rows x {len(test_df.columns)} columns.")
+        self.train_df = train_df
+        self.test_df = test_df
+        return (train_df, test_df)
+      
+      def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
+        # Initialize AzStorageClient 
+        azStorageClient = AzStorageClient(az_cred_file)
+        sessionkeys = azStorageClient.getSparkSessionKeys()
+        self.spark_session.conf.set(sessionkeys[0],sessionkeys[1])
 
-    self.train_df = train_df
-    self.test_df = test_df
-    return (train_df, test_df)
-  
-  def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
-    # Initialize AzStorageClient 
-    azStorageClient = AzStorageClient(az_cred_file)
-    sessionkeys = azStorageClient.getSparkSessionKeys()
-    self.spark_session.conf.set(sessionkeys[0],sessionkeys[1])
+        # Upload train dataset
+        train_blob_path = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{train_blob_name}"
+        print(f"Uploading train dataset to {train_blob_path}...")
+        self.train_df.write.format("parquet").mode("overwrite").save(train_blob_path)
 
-    # Upload train dataset
-    train_blob_path = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{train_blob_name}"
-    print(f"Uploading train dataset to {train_blob_path}...")
-    self.train_df.write.format("parquet").mode("overwrite").save(train_blob_path)
-
-    # Upload test dataset
-    test_blob_path = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{test_blob_name}"
-    print(f"Uploading test dataset to {test_blob_path}...")
-    self.test_df.write.format("parquet").mode("overwrite").save(test_blob_path)
-
+        # Upload test dataset
+        test_blob_path = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{test_blob_name}"
+        print(f"Uploading test dataset to {test_blob_path}...")
+        self.test_df.write.format("parquet").mode("overwrite").save(test_blob_path)
 
 class TFTDataTransformer:
   def __init__(self, train_sites, test_sites, \
-               data_file_path = None, data_df = None):
+              data_file_path = None, data_df = None):
     
     self.data_df = data_df 
     self.train_df = None 
@@ -674,5 +687,3 @@ class TFTDataTransformer:
     test_file.seek(0)
     print(f"Uploading test dataset to {test_blob_name}...")
     azStorageClient.uploadBlob(container, test_blob_name, test_file, overwrite=True)
-
-
