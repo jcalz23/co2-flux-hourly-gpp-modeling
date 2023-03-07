@@ -1,0 +1,8 @@
+,experiment,fold,val_index,training_time,eval_time,MAE,RMSE,R2,model_path
+0,1 Week,1,0,4153.092535808,0.30277939999996306,0.6476765275001526,1.4149647951126099,-0.4124480350867621,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/1 Week/fold-0-model.pth
+1,1 Week,2,2,4167.256360345,0.12712930299858272,2.093482494354248,4.871617317199707,0.5428765784583909,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/1 Week/fold-1-model.pth
+2,1 Week,3,4,4262.262947648,0.1315829160012072,2.0195772647857666,5.518618583679199,0.14745450172474117,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/1 Week/fold-2-model.pth
+3,2 Weeks,1,0,5328.238315535,0.19709237400093116,0.7108742594718933,1.4158695936203003,-0.4142550494505628,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/2 Weeks/fold-0-model.pth
+4,2 Weeks,2,2,5224.766734216999,0.18069745299726492,2.450714349746704,6.467372417449951,0.1943565508508267,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/2 Weeks/fold-1-model.pth
+5,2 Weeks,3,4,5354.623498934998,0.2931392050013528,2.097353458404541,5.791574954986572,0.11586281089449313,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/2 Weeks/fold-2-model.pth
+6,1 Month,1,0,6966.151808609997,0.29238303099555196,0.6553601622581482,1.2962056398391724,-0.1853021306968432,/content/drive/MyDrive/W210/co2-flux-hourly-gpp-modeling/data/model/1 Month/fold-0-model.pth
