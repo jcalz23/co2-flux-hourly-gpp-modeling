@@ -110,7 +110,7 @@ class PrepareMonthlyData:
         # Fit and transform the data using KNNImputer, format as DF
         inds = df.index.copy()
         df_subcols = df[knn_imp_cols].copy()
-        df_subcols = df_subcols.dropna(axis=1, how='all') # drop col if all NA, need to globally impute later
+        #df_subcols = df_subcols.dropna(axis=1, how='all') #<--- 03/07/23 dropped by John due to error
 
         # Execute imputation
         imputer = KNNImputer(n_neighbors=k, weights=weights)
@@ -417,7 +417,7 @@ class PrepareAllSitesHourly:
                 num_records += len(site_df)
             print(f'Processing: {i+1}. {r.site_id}')
             # For records with bad target QC, make NAN and impute
-            site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan
+            #site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan # 03/07/23 removed bc of advisor rec to keep
             site_df.drop([self.target_variable_qc], axis=1, inplace=True)
 
             # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
