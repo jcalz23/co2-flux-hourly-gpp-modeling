@@ -110,7 +110,7 @@ class PrepareMonthlyData:
         # Fit and transform the data using KNNImputer, format as DF
         inds = df.index.copy()
         df_subcols = df[knn_imp_cols].copy()
-        #df_subcols = df_subcols.dropna(axis=1, how='all') #<--- 03/07/23 dropped by John due to error
+        df_subcols = df_subcols.dropna(axis=1, how='all')
 
         # Execute imputation
         imputer = KNNImputer(n_neighbors=k, weights=weights)
@@ -154,8 +154,10 @@ class PrepareMonthlyData:
 
                 # Resample montlhly data to get the months required in hourly data
                 pft = site_month['MODIS_PFT'][0] # retain PFT to fill new rows
+                igbp = site_month['MODIS_IGBP'][0] # retain PFT to fill new rows
                 site_month = pd.merge(site_hr_df, site_month, how='left', on =['SITE_ID', 'year', 'month'])
                 site_month['MODIS_PFT'] = pft
+                site_month['MODIS_IGBP'] = igbp
                 site_month['SITE_ID'] = s
                 site_month['gap_flag_month'].fillna(int(1), inplace=True)
 
@@ -171,8 +173,13 @@ class PrepareMonthlyData:
                     site_month.interpolate(method='linear', limit_direction='both', inplace=True)
 
                 elif impute_method == 'knn':
+                    nan_cols = site_month.columns[site_month.isna().all()].tolist()
                     site_month = self.knn_impute(site_month, knn_imp_cols, k, weights)
-
+                    if len(nan_cols) > 0:
+                        print(f'{s} has column(s) with only NAN: {nan_cols}')
+                        for c in nan_cols:
+                            site_month[c] = pd.NA
+                            
                 elif impute_method == 'constant':
                     monthly_df = self.month_df.fillna(c)
 
@@ -256,7 +263,7 @@ class PrepareAllSitesHourly:
 
     def knn_impute(self, df, imp_cols, k, weights, n_fit=20000):
         # Init Imputer
-        imputer = KNNImputer(n_neighbors=k, weights=weights)
+        imputer = KNNImputer(n_neighbors=k, weights=weights, keep_empty_features=True)
 
         # Get subset of rows to speed up impute time (instead of fitting on every single record)
         df_subcols = df[imp_cols].copy()
