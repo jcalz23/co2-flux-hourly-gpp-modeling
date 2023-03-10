@@ -147,6 +147,12 @@ class PrepareMonthlyData:
                 site_hr_df = pd.read_csv(f"{self.data_dir}/{site_file}", usecols=['SITE_ID', 'datetime', 'year', 'month'])
                 dates = [d for d in pd.date_range(start=site_hr_df['datetime'].min(), end=site_hr_df['datetime'].max(), freq='M')]
 
+                # Create range of monthly dates from beginning of minimum month to beginning of next month after maximum month
+                site_hr_df['datetime'] = pd.to_datetime(site_hr_df['datetime'])
+                min_datetime = site_hr_df['datetime'].min()
+                max_datetime = site_hr_df['datetime'].max()
+                dates = pd.date_range(start=min_datetime.replace(day=1), end=max_datetime.replace(day=1) + pd.offsets.MonthBegin(1), freq='MS')
+
                 # Create dataframe
                 site_hr_df = pd.DataFrame({'datetime': dates})
                 site_hr_df['year'] = site_hr_df['datetime'].dt.year
@@ -231,12 +237,14 @@ class PrepareMonthlyData:
         
 
 class PrepareAllSitesHourly:
-    def __init__(self, site_metadata_filename, monthly_data_filename, train_sites, test_sites, 
+    def __init__(self, site_metadata_filename, monthly_data_filename, train_sites, val_sites, test_sites, 
                 hourly_features, metadata_features, target_variable_qc, target_variable, data_dir):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
         self.train_sites = train_sites
+        self.val_sites = val_sites
         self.test_sites = test_sites
+        self.all_sites = train_sites + val_sites + test_sites
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
         self.target_variable_qc = target_variable_qc
@@ -352,8 +360,8 @@ class PrepareAllSitesHourly:
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
         
-        if self.train_sites is not None and self.test_sites is not None:
-          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.test_sites), ]
+        if self.train_sites is not None and self.val_sites is not None and self.test_sites is not None:
+          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.val_sites + self.test_sites), ]
         
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
@@ -374,7 +382,6 @@ class PrepareAllSitesHourly:
     def merge_monthly_data(self, data_df):
         # Prep monthly
         monthly_df = pd.read_csv(self.monthly_data_filename)
-        monthly_df = monthly_df.loc[monthly_df['SITE_ID'].isin(self.train_sites + self.test_sites)]
         monthly_df.reset_index(inplace=True, drop=True)
         monthly_df[['year','month', 'MODIS_LC']] = monthly_df[['year','month', 'MODIS_LC']].astype('int')
 
@@ -404,21 +411,22 @@ class PrepareAllSitesHourly:
         available_site_count = 0
         retained_site_count = 0
         qc_flags_features = [s for s in self.hourly_features if "_QC" in s]
-        
-        # Global time index base
-        global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
 
-        ## SITE-LEVEL CLEANING -> CONCATENATE
-        for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):        
-          if not r.filename or type(r.filename) != type(""):
-              print(f'SKIP: {r.site_id} is missing hourly data.')
-              continue
+        ## SITE-LEVEL CLEANING -> LOOP & CONCATENATE
+        for i, site_id in enumerate(self.all_sites):
+          filename = f'data_full_half_hourly_raw_v0_1_{site_id}.csv'
+          available_site_count += 1  
+
+          # Check if site is in metadata
+          if site_id not in site_metadata_df['site_id'].unique():
+             print(f'Processing: {i+1}. {site_id} FAILED <--------- Site not in metadata')
+             continue
           else:
-              available_site_count += 1
+             print(f'Processing: {i+1}. {site_id}')
 
           # Prepare hourly site df
-          local_filename = self.data_dir + os.sep + r.filename
-          site_df = pd.read_csv(local_filename, usecols = [self.target_variable, self.target_variable_qc] + self.hourly_features)
+          local_filename = self.data_dir + os.sep + filename
+          site_df = pd.read_csv(local_filename, usecols = [self.target_variable] + self.hourly_features)
 
           # Format columns
           site_df['datetime'] = pd.to_datetime(site_df['datetime'])
@@ -426,33 +434,31 @@ class PrepareAllSitesHourly:
           site_df['minute'] = site_df['datetime'].dt.minute
           if len(qc_flags_features) != 0:
               site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
-          site_df['site_id'] = r.site_id
+          site_df['site_id'] = site_id
 
           # Move from HH to H level
           site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
           site_df.drop('minute', axis=1, inplace=True)
-          
-          # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
-          if start_date is not None and end_date is not None:
-            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
-          
-          if site_df is None:
-              print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
-              continue
-          else:
-              retained_site_count += 1
-              num_records += len(site_df)
-          
-          # For records with bad target QC, make NAN and impute
-          #site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan # 03/07/23 removed bc of advisor rec to keep
-          site_df.drop([self.target_variable_qc], axis=1, inplace=True)
+            
+          try:
+            # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
+            if start_date is not None and end_date is not None:
+              site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            
+            if site_df is None:
+                print(f'SKIP: {site_id} does not have sufficient data in desired time period')
+                continue
+            else:
+                retained_site_count += 1
+                num_records += len(site_df)
 
-          # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
-          if resample:
-              site_df = self.add_time_index(site_df, time_col, duration, site_id=r.site_id)
-          else:
-              site_df.sort_values(time_col, inplace=True)
-              site_df = site_df.reset_index()
+            # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
+            if resample:
+                site_df = self.add_time_index(site_df, time_col, duration, site_id=site_id)
+            else:
+                site_df['gap_flag_hour'] = 0
+                site_df.sort_values(time_col, inplace=True)
+                site_df = site_df.reset_index()
 
           # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
           if self.train_sites is not None and self.test_sites is not None:
@@ -535,7 +541,7 @@ class PrepareAllSitesHourly:
         data_df = self.merge_site_metadata(data_df, site_metadata_df)
         data_df = self.merge_monthly_data(data_df)
 
-        #reorder columns
+        # Reorder columns
         features = data_df.columns.to_list()
         remove_cols = [self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour', 'gap_flag_hour', 'gap_flag_month']
         features = list(filter(lambda x: x not in remove_cols, features))
@@ -622,7 +628,7 @@ if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
         self.test_df = test_df
         return (train_df, test_df)
       
-      def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
+      def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, val_blob_name, test_blob_name):
         # Initialize AzStorageClient 
         azStorageClient = AzStorageClient(az_cred_file)
         sessionkeys = azStorageClient.getSparkSessionKeys()
@@ -633,22 +639,27 @@ if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
         print(f"Uploading train dataset to {train_blob_path}...")
         self.train_df.write.format("parquet").mode("overwrite").save(train_blob_path)
 
+        # Upload val dataset
+        val_blob_name = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{val_blob_name}"
+        print(f"Uploading train dataset to {val_blob_name}...")
+        self.val_df.write.format("parquet").mode("overwrite").save(val_blob_name)
+
         # Upload test dataset
         test_blob_path = f"wasbs://{container}@{sessionkeys[2]}.blob.core.windows.net/{test_blob_name}"
         print(f"Uploading test dataset to {test_blob_path}...")
         self.test_df.write.format("parquet").mode("overwrite").save(test_blob_path)
 
 class TFTDataTransformer:
-  def __init__(self, train_sites, test_sites, \
+  def __init__(self, train_sites, val_sites, test_sites, \
               data_file_path = None, data_df = None):
     
     self.data_df = data_df 
-    self.train_df = None 
-    self.test_df = None 
     self.train_sites = train_sites
+    self.val_sites = val_sites
     self.test_sites = test_sites
     self.scaler = None
 
+    # Load data df
     if type(data_df) == type(None):
       if os.path.exists(data_file_path):
         self.data_df = pd.read_parquet(data_file_path, engine='pyarrow')
@@ -669,35 +680,48 @@ class TFTDataTransformer:
     self.test_df = test_df
     return (train_df, test_df)
 
-  def data_transform(self, categorical_cols, realNum_cols, non_transform_cols):
+  def data_transform(self, categorical_cols, realNum_cols, cat_encode_type='label'):
     data_df = self.data_df
     print(f"Data size: {self.data_df.shape}.")
 
-    # Label encode the categorical columns
-    data_df[categorical_cols] = data_df[categorical_cols].apply(LabelEncoder().fit_transform)
+    # Encode the categorical columns
+    if cat_encode_type == 'label':
+      data_df[categorical_cols] = data_df[categorical_cols].apply(LabelEncoder().fit_transform)
+    elif cat_encode_type == 'dummy':
+      dummy_df = pd.get_dummies(data_df[categorical_cols])
+      data_df = data_df.drop(columns=categorical_cols)
+      data_df = pd.concat([data_df, dummy_df], axis=1)
     print(f"Data size after encoding: {data_df.shape}")
-    
-    # Split into train and test sets
+      
+    # Split into train, val, and test sets
     train_df = data_df.loc[data_df['site_id'].isin(self.train_sites), ].copy()
+    val_df = data_df.loc[data_df['site_id'].isin(self.val_sites), ].copy()
     test_df  = data_df.loc[data_df['site_id'].isin(self.test_sites), ].copy()
     print(f"Number of sites in df: {len(data_df['site_id'].unique())}")
-    print(f"Train Sites: {self.train_sites}")
-    print(f"Test Sites: {self.test_sites}")
+    print(f"Train Sites: {train_df['site_id'].unique()}")
+    print(f"Val Sites: {val_df['site_id'].unique()}")
+    print(f"Test Sites: {test_df['site_id'].unique()}")
 
     # Normalize data
     print(f"Normalizing real features ({len(realNum_cols)})")
     scaler = StandardScaler().fit(train_df[realNum_cols])
     train_df.loc[:,realNum_cols] = scaler.transform(train_df[realNum_cols])
+    val_df.loc[:,realNum_cols] = scaler.transform(val_df[realNum_cols])
     test_df.loc[:,realNum_cols] = scaler.transform(test_df[realNum_cols])
+
+    # Save scaler object <--- later
     
     print(f"Train data size: {train_df.shape}.")
+    print(f"Val data size: {val_df.shape}.")
     print(f"Test data size: {test_df.shape}.")  
     train_df.reset_index(inplace=True, drop=True)
+    val_df.reset_index(inplace=True, drop=True)
     test_df.reset_index(inplace=True, drop=True)
 
     self.train_df = train_df
+    self.val_df = val_df
     self.test_df = test_df
-    return (train_df, test_df)
+    return (train_df, val_df, test_df)
 
   def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
     # Initialize AzStorageClient 
