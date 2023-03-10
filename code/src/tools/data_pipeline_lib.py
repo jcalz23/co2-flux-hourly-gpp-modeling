@@ -4,6 +4,7 @@ import random
 import pandas as pd
 import numpy as np
 
+from datetime import datetime 
 from io import BytesIO
 from tqdm import tqdm
 from sklearn.impute import KNNImputer
@@ -178,7 +179,7 @@ class PrepareMonthlyData:
                     if len(nan_cols) > 0:
                         print(f'{s} has column(s) with only NAN: {nan_cols}')
                         for c in nan_cols:
-                            site_month[c] = pd.NA
+                            site_month[c] = np.nan
                             
                 elif impute_method == 'constant':
                     monthly_df = self.month_df.fillna(c)
@@ -263,22 +264,33 @@ class PrepareAllSitesHourly:
 
     def knn_impute(self, df, imp_cols, k, weights, n_fit=20000):
         # Init Imputer
-        imputer = KNNImputer(n_neighbors=k, weights=weights, keep_empty_features=True)
+        imputer = KNNImputer(n_neighbors=k, weights=weights)
 
         # Get subset of rows to speed up impute time (instead of fitting on every single record)
         df_subcols = df[imp_cols].copy()
         na_mask = df_subcols.isna().any(axis=1)
         na_rows = df_subcols[na_mask]
+        nan_cols = []
+        imputed_group_columns = df_subcols.columns
 
         # If there are at least 10k rows that don't have NA, use them to fit imputer (saves time)
         if (len(df) - len(na_rows)) > 10000:
             not_na_rows = df_subcols.dropna()
+            not_na_rows = not_na_rows[na_rows.columns]
             not_na_rows = not_na_rows.sample(n=np.min([n_fit, len(not_na_rows)]))
             imputer.fit(not_na_rows)
             imputed_group = imputer.transform(na_rows)
         else:
+            nan_cols = na_rows.columns[na_rows.isna().all()].tolist()
+            na_rows = na_rows.dropna(axis=1, how='all')
+            imputed_group_columns = na_rows.columns
             imputed_group = imputer.fit_transform(na_rows)
-        imputed_group = pd.DataFrame(imputed_group, columns=df_subcols.columns, index=na_rows.index)
+
+        imputed_group = pd.DataFrame(imputed_group, columns=imputed_group_columns, index=na_rows.index)
+        if len(nan_cols) > 0:
+            print(f'  Column(s) with only NAN: {nan_cols}')
+            for c in nan_cols:
+                imputed_group[c] = np.nan
 
         # Reinsert NA rows
         df_subcols.loc[na_mask] = imputed_group
@@ -366,6 +378,9 @@ class PrepareAllSitesHourly:
         monthly_df.reset_index(inplace=True, drop=True)
         monthly_df[['year','month', 'MODIS_LC']] = monthly_df[['year','month', 'MODIS_LC']].astype('int')
 
+        if monthly_df.isna().sum().sum() != 0:
+            print(f"{monthly_df.isna().sum().sum()} missing values in monthly data")
+
         # Merge
         data_df = data_df.merge(monthly_df, how='left',
                         left_on =['site_id', 'year', 'month'],
@@ -379,6 +394,9 @@ class PrepareAllSitesHourly:
         return data_df
     
 
+    def get_global_time_index(timestamp):
+      return (timestamp - datetime.datetime(1970, 1, 1)).total_seconds()/(3600)
+
     def site_data_cleanup(self, site_metadata_df, imp_cols, resample, impute, impute_method,
                          impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None):
         data_df = None
@@ -386,6 +404,9 @@ class PrepareAllSitesHourly:
         available_site_count = 0
         retained_site_count = 0
         qc_flags_features = [s for s in self.hourly_features if "_QC" in s]
+        
+        # Global time index base
+        global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
 
         ## SITE-LEVEL CLEANING -> CONCATENATE
         for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):        
@@ -410,72 +431,73 @@ class PrepareAllSitesHourly:
           # Move from HH to H level
           site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
           site_df.drop('minute', axis=1, inplace=True)
-            
-          try:
-            # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
-            if start_date is not None and end_date is not None:
-              site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
-            
-            if site_df is None:
-                print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
-                continue
-            else:
-                retained_site_count += 1
-                num_records += len(site_df)
-            print(f'Processing: {i+1}. {r.site_id}')
-            # For records with bad target QC, make NAN and impute
-            #site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan # 03/07/23 removed bc of advisor rec to keep
-            site_df.drop([self.target_variable_qc], axis=1, inplace=True)
+          
+          # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
+          if start_date is not None and end_date is not None:
+            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+          
+          if site_df is None:
+              print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
+              continue
+          else:
+              retained_site_count += 1
+              num_records += len(site_df)
+          
+          # For records with bad target QC, make NAN and impute
+          #site_df.loc[site_df[self.target_variable_qc] == 3, self.target_variable] = np.nan # 03/07/23 removed bc of advisor rec to keep
+          site_df.drop([self.target_variable_qc], axis=1, inplace=True)
 
-            # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
-            if resample:
-                site_df = self.add_time_index(site_df, time_col, duration, site_id=r.site_id)
-            else:
-                site_df.sort_values(time_col, inplace=True)
-                site_df = site_df.reset_index()
+          # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
+          if resample:
+              site_df = self.add_time_index(site_df, time_col, duration, site_id=r.site_id)
+          else:
+              site_df.sort_values(time_col, inplace=True)
+              site_df = site_df.reset_index()
 
-            # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-            if self.train_sites is not None and self.test_sites is not None:
-              random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
-            else:
-              random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
-            
-            if i == random_check:   
-                site_df_pre_imp = site_df.copy()
-            
-            # Impute missing values at site-level, otherwise fillna w/ -1 at very end
-            if (impute) & (site_df.isna().sum().sum() != 0):
-                if impute_method=='ffill': # select most recent record
-                    site_df.sort_values(time_col, ascending=True, inplace=True)
-                    site_df.fillna(method="ffill", inplace=True)
-                elif impute_method=='knn': # use KNNImputer
-                    site_df = self.knn_impute(site_df, imp_cols, k, weights, n_fit)
-                elif impute_method=='constant':
-                    site_df[imp_cols] = site_df[imp_cols].fillna(c)
+          # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
+          if self.train_sites is not None and self.test_sites is not None:
+            random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+          else:
+            random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
+          
+          if i == random_check:   
+              site_df_pre_imp = site_df.copy()
+          
+          # Impute missing values at site-level, otherwise fillna w/ -1 at very end
+          if (impute) & (site_df.isna().sum().sum() != 0):
+              if impute_method=='ffill': # select most recent record
+                  site_df.sort_values(time_col, ascending=True, inplace=True)
+                  site_df.fillna(method="ffill", inplace=True)
+              elif impute_method=='knn': # use KNNImputer
+                  nan_cols = site_df.columns[site_df.isna().all()].tolist()
+                  site_df = self.knn_impute(site_df, imp_cols, k, weights, n_fit)
+                  if len(nan_cols) > 0:
+                      print(f'{r.site_id} has column(s) with only NAN: {nan_cols}')
+                      for c in nan_cols:
+                          site_df[c] = pd.NA
+              elif impute_method=='constant':
+                  site_df[imp_cols] = site_df[imp_cols].fillna(c)
 
-            if i == random_check:
-                self.check_imputation(site_df_pre_imp, site_df)
-            
-            # Create local timestep_idx
-            site_df.sort_values(time_col, ascending=True, inplace=True)
-            site_df['timestep_idx_local'] = range(len(site_df))
+          if i == random_check:
+              self.check_imputation(site_df_pre_imp, site_df)
+          
+          # Create local timestep_idx
+          site_df.sort_values(time_col, ascending=True, inplace=True)
+          site_df['timestep_idx_local'] = range(len(site_df))
 
-            # Concatenate site_dfs together into global data_df
-            if type(data_df) == type(None):
-                data_df = site_df
-            else:
-                data_df = pd.concat([data_df, site_df])
+          # Create global timestamp inds
+          site_df['timestep_idx_global'] = (site_df[time_col]- global_time_index_base).\
+                                            apply(lambda x: int(x.total_seconds() / 3600))
 
-          except Exception as e:
-            print(f'ERROR: {r.site_id} run into error. Exception: {str(e)}')
+          # Concatenate site_dfs together into global data_df
+          print(f'{i+1}. {r.site_id}: {site_df.shape}')
+          if type(data_df) == type(None):
+              data_df = site_df
+          else:
+              data_df = pd.concat([data_df, site_df])
         # End all-site loop
 
         ## Global Data-DF Cleanup
-        # Create global timestamp inds
-        dates = sorted(data_df['datetime'].unique())
-        date_to_idx = {date: idx for idx, date in enumerate(dates)}
-        data_df['timestep_idx_global'] = data_df['datetime'].map(date_to_idx)
-
         # Order cols + sort
         data_df.sort_values(['site_id', time_col], ascending=True, inplace=True)
 
