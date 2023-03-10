@@ -412,6 +412,9 @@ class PrepareAllSitesHourly:
         retained_site_count = 0
         qc_flags_features = [s for s in self.hourly_features if "_QC" in s]
 
+        # Global time index base
+        global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
+
         ## SITE-LEVEL CLEANING -> LOOP & CONCATENATE
         for i, site_id in enumerate(self.all_sites):
           filename = f'data_full_half_hourly_raw_v0_1_{site_id}.csv'
