@@ -244,7 +244,10 @@ class PrepareAllSitesHourly:
         self.train_sites = train_sites
         self.val_sites = val_sites
         self.test_sites = test_sites
-        self.all_sites = train_sites + val_sites + test_sites
+        if train_sites is not None and val_sites is not None and test_sites is not None:
+          self.all_sites = train_sites + val_sites + test_sites
+        else:
+          self.all_sites = None
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
         self.target_variable_qc = target_variable_qc
@@ -360,8 +363,8 @@ class PrepareAllSitesHourly:
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
         
-        if self.train_sites is not None and self.val_sites is not None and self.test_sites is not None:
-          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.train_sites + self.val_sites + self.test_sites), ]
+        if self.all_sites is not None:
+          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.all_sites), ]
         
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
@@ -401,9 +404,6 @@ class PrepareAllSitesHourly:
         return data_df
     
 
-    def get_global_time_index(timestamp):
-      return (timestamp - datetime.datetime(1970, 1, 1)).total_seconds()/(3600)
-
     def site_data_cleanup(self, site_metadata_df, imp_cols, resample, impute, impute_method,
                          impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None):
         data_df = None
@@ -416,19 +416,15 @@ class PrepareAllSitesHourly:
         global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
 
         ## SITE-LEVEL CLEANING -> LOOP & CONCATENATE
-        for i, site_id in enumerate(self.all_sites):
-          filename = f'data_full_half_hourly_raw_v0_1_{site_id}.csv'
+        for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):
+          if not r.filename or type(r.filename) != type(""):
+            print(f'SKIP: {r.site_id} is missing hourly data.')
+            continue
+
           available_site_count += 1  
 
-          # Check if site is in metadata
-          if site_id not in site_metadata_df['site_id'].unique():
-             print(f'Processing: {i+1}. {site_id} FAILED <--------- Site not in metadata')
-             continue
-          else:
-             print(f'Processing: {i+1}. {site_id}')
-
           # Prepare hourly site df
-          local_filename = self.data_dir + os.sep + filename
+          local_filename = self.data_dir + os.sep + r.filename
           site_df = pd.read_csv(local_filename, usecols = [self.target_variable] + self.hourly_features)
 
           # Format columns
@@ -437,35 +433,34 @@ class PrepareAllSitesHourly:
           site_df['minute'] = site_df['datetime'].dt.minute
           if len(qc_flags_features) != 0:
               site_df[qc_flags_features] = site_df[qc_flags_features].astype('int')
-          site_df['site_id'] = site_id
+          site_df['site_id'] = r.site_id
 
           # Move from HH to H level
           site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
           site_df.drop('minute', axis=1, inplace=True)
             
-          try:
-            # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
-            if start_date is not None and end_date is not None:
-              site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
-            
-            if site_df is None:
-                print(f'SKIP: {site_id} does not have sufficient data in desired time period')
-                continue
-            else:
-                retained_site_count += 1
-                num_records += len(site_df)
+          # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
+          if start_date is not None and end_date is not None:
+            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+          
+          if site_df is None:
+              print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
+              continue
+          else:
+              retained_site_count += 1
+              num_records += len(site_df)
 
-            # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
-            if resample:
-                site_df = self.add_time_index(site_df, time_col, duration, site_id=site_id)
-            else:
-                site_df['gap_flag_hour'] = 0
-                site_df.sort_values(time_col, inplace=True)
-                site_df = site_df.reset_index()
+          # Resample to add rows for missing timesteps, assign timestep_idx and "gap_flag"
+          if resample:
+              site_df = self.add_time_index(site_df, time_col, duration, site_id=r.site_id)
+          else:
+              site_df['gap_flag_hour'] = 0
+              site_df.sort_values(time_col, inplace=True)
+              site_df = site_df.reset_index()
 
           # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-          if self.train_sites is not None and self.test_sites is not None:
-            random_check = random.randint(0, len(self.train_sites) + len(self.test_sites))
+          if self.all_sites is not None:
+            random_check = random.randint(0, len(self.all_sites))
           else:
             random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
           
@@ -536,7 +531,14 @@ class PrepareAllSitesHourly:
 
     def all_sites_all_sources(self, imp_cols, resample, impute, impute_method, impute_global, k,
                             weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c):
+        
         site_metadata_df = self.prep_metadata()
+        
+        if self.all_sites is not None:
+          sites_missing_monthly = [s for s in self.all_sites if s not in site_metadata_df['site_id'].values]
+          if len(sites_missing_monthly):
+            print(f'Sites with missing monthly data: {sites_missing_monthly}')
+
         data_df = self.site_data_cleanup(site_metadata_df, imp_cols, resample, impute, impute_method, 
                                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c)
 
