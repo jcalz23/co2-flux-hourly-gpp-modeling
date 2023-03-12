@@ -135,7 +135,7 @@ class PrepareMonthlyData:
         print(f"# sites dropped bc not available in data_dir: {init_sites - len(self.month_df['SITE_ID'].unique())}")
         
         # Loop through hourly site data to determine which months are present
-        for i, s in tqdm(enumerate(self.month_df['SITE_ID'].unique())):
+        for i, s in enumerate(self.month_df['SITE_ID'].unique()):
             # Get monthly data for site
             site_month = self.month_df[self.month_df['SITE_ID'] == s].copy()
             site_month.reset_index(drop = True, inplace=True)
@@ -237,20 +237,12 @@ class PrepareMonthlyData:
         
 
 class PrepareAllSitesHourly:
-    def __init__(self, site_metadata_filename, monthly_data_filename, train_sites, val_sites, test_sites, 
-                hourly_features, metadata_features, target_variable_qc, target_variable, data_dir):
+    def __init__(self, site_metadata_filename, monthly_data_filename, 
+                hourly_features, metadata_features, target_variable, data_dir):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
-        self.train_sites = train_sites
-        self.val_sites = val_sites
-        self.test_sites = test_sites
-        if train_sites is not None and val_sites is not None and test_sites is not None:
-          self.all_sites = train_sites + val_sites + test_sites
-        else:
-          self.all_sites = None
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
-        self.target_variable_qc = target_variable_qc
         self.target_variable = target_variable
         self.data_dir = data_dir
 
@@ -416,7 +408,7 @@ class PrepareAllSitesHourly:
         global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
 
         ## SITE-LEVEL CLEANING -> LOOP & CONCATENATE
-        for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):
+        for i, r in site_metadata_df[['site_id','filename']].iterrows():
           if not r.filename or type(r.filename) != type(""):
             print(f'SKIP: {r.site_id} is missing hourly data.')
             continue
