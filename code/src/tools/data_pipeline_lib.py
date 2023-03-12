@@ -337,6 +337,7 @@ class PrepareAllSitesHourly:
 
         # Remove sites without at least one year of records
         if len(filtered_df) < 365*24:
+            print(f"Site has less than 1 year of remaining sequences")
             return None
         else:
             # Remove sites that have > 20% gaps in sequence
@@ -346,6 +347,7 @@ class PrepareAllSitesHourly:
             missing_percentage = (total_expected_count - len(filtered_df)) / total_expected_count
 
             if missing_percentage > missing_thresh:
+                print(f"Site has too many gaps, missing % = {missing_percentage}")
                 return None
             else:
                 filtered_df.reset_index(inplace=True)
