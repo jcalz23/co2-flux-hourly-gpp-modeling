@@ -355,8 +355,10 @@ class PrepareAllSitesHourly:
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
         
-        if self.all_sites is not None:
-          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.all_sites), ]
+        # Print out the site without monthly data
+        sites_missing_monthly = len(site_metadata_df.loc[site_metadata_df['monthly_data_available']!='Yes', ])
+        if sites_missing_monthly > 0:
+            print(f'Sites with missing monthly data: {sites_missing_monthly}')
         
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
@@ -451,10 +453,7 @@ class PrepareAllSitesHourly:
               site_df = site_df.reset_index()
 
           # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-          if self.all_sites is not None:
-            random_check = random.randint(0, len(self.all_sites))
-          else:
-            random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
+          random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
           
           if i == random_check:   
               site_df_pre_imp = site_df.copy()
@@ -525,11 +524,6 @@ class PrepareAllSitesHourly:
                             weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c):
         
         site_metadata_df = self.prep_metadata()
-        
-        if self.all_sites is not None:
-          sites_missing_monthly = [s for s in self.all_sites if s not in site_metadata_df['site_id'].values]
-          if len(sites_missing_monthly):
-            print(f'Sites with missing monthly data: {sites_missing_monthly}')
 
         data_df = self.site_data_cleanup(site_metadata_df, imp_cols, resample, impute, impute_method, 
                                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c)
