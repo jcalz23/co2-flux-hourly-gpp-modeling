@@ -3,6 +3,7 @@ import sys
 import random
 import pandas as pd
 import numpy as np
+import joblib
 
 from datetime import datetime 
 from io import BytesIO
@@ -643,13 +644,15 @@ if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
         self.test_df.write.format("parquet").mode("overwrite").save(test_blob_path)
 
 class TFTDataTransformer:
-  def __init__(self, train_sites, val_sites, test_sites, \
-              data_file_path = None, data_df = None):
+  def __init__(self, train_sites, val_sites, test_sites, model_name='TFT', \
+              data_file_path = None, data_df = None, preproc_objects_dir = None):
     
     self.data_df = data_df 
     self.train_sites = train_sites
     self.val_sites = val_sites
     self.test_sites = test_sites
+    self.model_name = model_name
+    self.preproc_objects_dir = preproc_objects_dir
     self.scaler = None
 
     # Load data df
@@ -702,7 +705,9 @@ class TFTDataTransformer:
     val_df.loc[:,realNum_cols] = scaler.transform(val_df[realNum_cols])
     test_df.loc[:,realNum_cols] = scaler.transform(test_df[realNum_cols])
 
-    # Save scaler object <--- later
+    # Save scaler object
+    scaler_path = os.path.join(self.preproc_objects_dir, f'scaler_{self.model_name}.joblib')
+    joblib.dump(scaler, scaler_path)
     
     print(f"Train data size: {train_df.shape}.")
     print(f"Val data size: {val_df.shape}.")
@@ -716,7 +721,7 @@ class TFTDataTransformer:
     self.test_df = test_df
     return (train_df, val_df, test_df)
 
-  def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
+  def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, val_blob_name, test_blob_name):
     # Initialize AzStorageClient 
     azStorageClient = AzStorageClient(az_cred_file)
 
@@ -726,6 +731,13 @@ class TFTDataTransformer:
     train_file.seek(0)
     print(f"Uploading train dataset to {train_blob_name}...")
     azStorageClient.uploadBlob(container, train_blob_name, train_file, overwrite=True)
+    
+    # Upload trvalain dataset
+    val_file = BytesIO()
+    self.val_df.to_parquet(val_file, engine='pyarrow')
+    val_file.seek(0)
+    print(f"Uploading val dataset to {val_blob_name}...")
+    azStorageClient.uploadBlob(container, val_blob_name, val_file, overwrite=True)
 
     # Upload test dataset
     test_file = BytesIO()
