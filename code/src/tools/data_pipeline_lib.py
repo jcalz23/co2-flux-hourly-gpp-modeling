@@ -332,13 +332,13 @@ class PrepareAllSitesHourly:
             print("IMPUTATION ERROR: Post imputation df has different row count than initial df")
 
 
-    def filter_date_range(self, df, start_date, end_date, time_col, missing_thresh=0.2):
+    def filter_date_range(self, df, start_date, end_date, time_col, site_id, missing_thresh=0.2):
         df.set_index(time_col, inplace=True)
         filtered_df = df.loc[start_date:end_date].copy()
 
         # Remove sites without at least one year of records
         if len(filtered_df) < 365*24:
-            print(f"Site has less than 1 year of remaining sequences")
+            print(f"{site_id} has less than 1 year of remaining sequences")
             return None
         else:
             # Remove sites that have > 20% gaps in sequence
@@ -348,7 +348,7 @@ class PrepareAllSitesHourly:
             missing_percentage = (total_expected_count - len(filtered_df)) / total_expected_count
 
             if missing_percentage > missing_thresh:
-                print(f"Site has too many gaps, missing % = {missing_percentage}")
+                print(f"{site_id} has too many gaps, missing % = {missing_percentage}")
                 return None
             else:
                 filtered_df.reset_index(inplace=True)
@@ -441,7 +441,6 @@ class PrepareAllSitesHourly:
             site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
           
           if site_df is None:
-              print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
               continue
           else:
               retained_site_count += 1
