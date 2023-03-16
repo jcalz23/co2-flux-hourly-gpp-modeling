@@ -1,0 +1,237 @@
+MY_HOME_ABS_PATH = "/root/co2-flux-hourly-gpp-modeling/"
+
+# Inmport Libraries
+import os
+os.chdir(MY_HOME_ABS_PATH)
+
+import sys
+import warnings
+warnings.filterwarnings("ignore")
+import copy
+import json
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import tensorflow as tf
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.loggers import TensorBoardLogger
+import torch
+import torch.nn as nn
+import hydroeval as he
+
+from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
+from pytorch_forecasting.data import GroupNormalizer
+from pytorch_forecasting.metrics import SMAPE, PoissonLoss, QuantileLoss
+from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
+from pytorch_forecasting import BaseModel, MAE
+from pytorch_forecasting.metrics.point import RMSE
+from pytorch_forecasting.data.encoders import NaNLabelEncoder
+
+from sklearn.metrics import r2_score
+from timeit import default_timer
+from datetime import datetime
+import gc
+import pickle
+
+# Load locale custome modules
+os.chdir(MY_HOME_ABS_PATH)
+sys.path.append('./.cred')
+sys.path.append('./code/src/tools')
+sys.path.append(os.path.abspath("./code/src/tools"))
+  
+from CloudIO.AzStorageClient import AzStorageClient
+from data_pipeline_lib import *
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.float_format', lambda x: '%.5f' % x)
+pl.seed_everything(42)
+
+root_dir =  MY_HOME_ABS_PATH
+tmp_dir =  root_dir + os.sep + '.tmp'
+data_dir = root_dir + os.sep + 'data'
+model_dir = data_dir + os.sep + 'models'
+cred_dir = root_dir + os.sep + '.cred'
+az_cred_file = cred_dir + os.sep + 'azblobcred.json'
+
+# Data loading functions
+
+def get_raw_datasets(container, blob_name):
+    local_file = tmp_dir + os.sep + blob_name
+    data_df = None
+    if not (os.path.exists(local_file)):
+        azStorageClient = AzStorageClient(az_cred_file)
+        file_stream = azStorageClient.downloadBlob2Stream(container, blob_name)
+        data_df = pd.read_parquet(file_stream, engine='pyarrow')
+        data_df.to_parquet(local_file)
+    else:
+        data_df = pd.read_parquet(local_file)
+    
+    print(f"Data size: {data_df.shape}")
+    
+    # Convert Dtypes
+    cat_cols = ["year", "month", "day", "hour", "MODIS_IGBP", "koppen_main", "koppen_sub", 
+                "gap_flag_month", "gap_flag_hour"]
+    for col in cat_cols:
+        data_df[col] = data_df[col].astype(str).astype("category")
+    
+    print(f"Data Columns: {data_df.columns}")
+    print(f"NA count: {data_df.isna().sum().sum()}")
+    return data_df
+
+def get_splited_datasets(data_df, val_index, test_index):
+          
+    SITE_SPLITS =[
+      ['AR-SLu', 'AU-ASM', 'AU-Cpr', 'AU-Cum', 'AU-RDF', 'CA-TP3', 'CA-TPD', 'CN-Sw2',
+        'DE-SfN', 'NL-Hor', 'US-Me6', 'US-Syv', 'US-WCr', 'US-AR2', 'US-Tw4', 'US-UMB', 
+        'US-Vcp', 'CH-Cha', 'CZ-BK1', 'CZ-KrP', 'DE-Obe', 'ES-LJu', 'FI-Let', 'FR-Lam', 
+        'IT-Lav', 'SE-Lnn'], 
+      ['CZ-BK2', 'DE-Spw', 'FR-Pue', 'IT-CA3', 'IT-Noe', 'IT-Ro2', 'US-IB2', 'US-Myb',
+        'US-SRM', 'CA-Ca3', 'US-CRT', 'US-Fmf', 'US-KFS', 'US-Prr', 'US-UMd', 'US-Wjs',
+        'BE-Bra', 'BE-Lon', 'CH-Lae', 'CZ-RAJ', 'DE-HoH', 'DE-Kli', 'DE-RuR', 'IL-Yat', 
+        'IT-Tor', 'SE-Htm'], 
+      ['AR-Vir', 'AT-Neu', 'AU-DaS', 'AU-TTE', 'AU-Wom', 'CA-TP1', 'IT-CA1', 'IT-SRo',
+        'US-WPT', 'US-Wkg', 'CA-Ca2', 'CA-Cbo', 'CA-TP4', 'US-ARM', 'US-Ro1', 'US-Rws',
+        'US-SRG', 'US-Vcm', 'BE-Dor', 'BE-Vie', 'CZ-Stn', 'DE-Geb', 'ES-LM2', 'FR-Fon', 
+        'SE-Ros', 'DE-Hte'],
+      ['AU-DaP', 'AU-Emr', 'AU-Gin', 'AU-How', 'AU-Rig', 'US-GLE', 'US-NR1', 'US-Twt',
+        'CA-Ca1', 'CA-Gro', 'US-AR1', 'US-Bar', 'US-Mpj', 'US-Ses', 'CH-Fru', 'CH-Oe2',
+        'DE-Hai', 'DK-Sor', 'FI-Hyy', 'FR-Aur', 'FR-Hes', 'GF-Guy', 'IT-SR2', 'SE-Deg',
+        'SE-Nor', 'NL-Loo'],
+      ['AU-Stp', 'AU-Whr', 'CA-Oas', 'DE-Lnf', 'ES-Amo', 'FI-Sod', 'IT-CA2', 'US-Ton',
+        'US-Var', 'US-Whs', 'US-Ho1', 'US-Oho', 'US-Seg', 'CH-Dav', 'CZ-Lnz', 'CZ-wet',
+        'DE-Gri', 'DE-Tha', 'ES-LM1', 'FR-Bil', 'FR-FBn', 'IT-BCi', 'IT-MBo', 'IT-Ren',
+        'RU-Fyo']
+    ]
+
+    train_sites, val_sites, test_sites = [], [], []
+    for i, subset in enumerate(SITE_SPLITS):
+        if i == val_index:
+            val_sites = SITE_SPLITS[i]
+        elif i == test_index:
+            test_sites = SITE_SPLITS[i]
+        else:
+            train_sites += SITE_SPLITS[i]
+
+    train_df = data_df.loc[data_df['site_id'].isin(train_sites), ].copy()
+    val_df   = data_df.loc[data_df['site_id'].isin(val_sites), ].copy()
+
+    if len(train_df['site_id'].unique()) != len(train_sites):
+        print(f"Expected Train({len(train_sites)}), Actual Train({len(train_df['site_id'].unique())})")
+        sites_missing = [s for s in train_sites if s not in train_df['site_id'].unique()]
+        print(f'  missing: {sites_missing}')
+
+    if len(val_df['site_id'].unique()) != len(val_sites):
+        print(f"Expected Train({len(val_sites)}), Actual Train({len(val_df['site_id'].unique())})")
+        sites_missing = [s for s in val_sites if s not in val_df['site_id'].unique()]
+        print(f'  missing: {sites_missing}')
+
+    if test_index is not None:
+        test_df = data_df.loc[data_df['site_id'].isin(test_sites), ].copy()
+        if len(test_df['site_id'].unique()) != len(test_sites):
+            print(f"Expected Train({len(test_sites)}), Actual Train({len(test_df['site_id'].unique())})")
+            sites_missing = [s for s in test_sites if s not in test_df['site_id'].unique()]
+            print(f'  missing: {sites_missing}')
+    else:
+        test_df = None
+
+    return (train_df, val_df, test_df)
+
+def subset_data(train_df, val_df, test_df, subset_len):
+    print(f'Subest length: {subset_len} timesteps for each sites')
+    
+    train_df = train_df.loc[train_df['timestep_idx_local'] < subset_len, ].copy()
+    print(f"Subset num train timesteps: {len(train_df)}")
+    val_df = val_df.loc[val_df['timestep_idx_local'] < subset_len, ].copy()
+    print(f"Subset num val timesteps: {len(val_df)}")
+    if test_df is not None:
+        test_df = test_df.loc[test_df['timestep_idx_local'] < subset_len, ].copy()
+        print(f"Subset num test timesteps: {len(test_df)}")
+
+    return (train_df, val_df, test_df)
+        
+def setup_train_val_tsdataset(train_df, val_df, test_df, min_encoder_len):
+    # create training and validation TS dataset 
+    training = TimeSeriesDataSet(
+      train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence
+      time_idx="timestep_idx_global",
+      target="GPP_NT_VUT_REF",
+      group_ids=["site_id"],
+      allow_missing_timesteps=False, # <---- turned on bc some rows are removed.
+      min_encoder_length=min_encoder_len,
+      max_encoder_length=min_encoder_len,
+      min_prediction_length=1,
+      max_prediction_length=1,
+      static_categoricals=["MODIS_IGBP","koppen_main","koppen_sub"],
+      static_reals=[],
+      time_varying_known_categoricals=["year", "month", "day", "hour"],
+      time_varying_known_reals=["timestep_idx_global", 
+                                'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
+                                'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 
+                                'BESS-PAR', 'BESS-PARdiff', 'BESS-RSDN', 'CSIF-SIFdaily', 'PET', 'Ts', 
+                                'ESACCI-sm', 'NDWI', 'Percent_Snow', 'Fpar', 'Lai', 'LST_Day','LST_Night'],
+      time_varying_unknown_categoricals=["gap_flag_month", "gap_flag_hour"], 
+      time_varying_unknown_reals=["GPP_NT_VUT_REF"],
+      target_normalizer=None,
+      categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
+                            'koppen_main': NaNLabelEncoder(add_nan=True),
+                            'koppen_sub': NaNLabelEncoder(add_nan=True),
+                            'year': NaNLabelEncoder(add_nan=True), # temp for subset
+                            'month': NaNLabelEncoder(add_nan=True), # temp for subset
+                            'day': NaNLabelEncoder(add_nan=True), # temp for subset
+                            },
+      add_relative_time_idx=True,
+      add_target_scales=False, # <------- turned off
+      add_encoder_length=False, # <------- turned off
+    )
+
+    validation = TimeSeriesDataSet.from_dataset(training, val_df, predict=False, stop_randomization=True)
+    
+    if test_df is not None:
+        testing = TimeSeriesDataSet.from_dataset(training, test_df, predict=False, stop_randomization=True)
+    else:
+        testing = None
+
+    return (training, validation, testing)
+          
+# Eval Functions
+
+def get_eval_mask(dataloader):
+    return torch.logical_not(torch.cat([x['decoder_cont'][:, :, -1].reshape(-1) for x, y in iter(dataloader)]))
+
+def get_eval_metrics(actuals, predictions, mask=None):
+    y_true = actuals.reshape(-1)
+    y_pred = predictions.reshape(-1)
+    
+    # Apply mask if there is any
+    if mask is not None:            
+        y_true = y_true[mask.bool()]
+        y_pred = y_pred[mask.bool()]
+
+    # Get masked RMSE, MAE, NSE
+    rmse = torch.sqrt(torch.mean((y_true - y_pred) ** 2))
+    mae = torch.mean((y_true - y_pred).abs())
+    nse = he.nse(y_true.numpy(), y_pred.numpy())
+    r2 = r2_score(y_true.numpy(), y_pred.numpy())
+
+    return {"rmse": rmse.item(), "mae": mae.item(), "nse": nse, "r2": r2}
+
+# Mask metrics for validation set
+def masked_eval_metrics(dataloader, model):
+    # Get y_true, y_pred, mask
+    y_true = torch.cat([y[0] for x, y in iter(dataloader)]).reshape(-1)
+    y_pred = model.predict(dataloader).reshape(-1)
+    mask = torch.logical_not(torch.cat([x['decoder_cont'][:, :, -1].reshape(-1) for x, y in iter(dataloader)]))
+
+    # Apply mask
+    masked_y_true = y_true[mask.bool()]
+    masked_y_pred = y_pred[mask.bool()]
+
+    # Get masked RMSE, MAE, NSE
+    masked_rmse = torch.sqrt(torch.mean((masked_y_true - masked_y_pred) ** 2))
+    masked_mae = torch.mean((masked_y_true - masked_y_pred).abs())
+    masked_nse = he.nse(masked_y_true.reshape(-1).numpy(), masked_y_pred.reshape(-1).numpy())
+    masked_r2 = r2_score(masked_y_true.reshape(-1).numpy(), masked_y_pred.reshape(-1).numpy())
+
+    return masked_rmse, masked_mae, masked_nse, masked_r2
