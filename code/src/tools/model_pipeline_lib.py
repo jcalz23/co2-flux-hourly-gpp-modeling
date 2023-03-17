@@ -150,8 +150,54 @@ def subset_data(train_df, val_df, test_df, subset_len):
         print(f"Subset num test timesteps: {len(test_df)}")
 
     return (train_df, val_df, test_df)
-        
-def setup_train_val_tsdataset(train_df, val_df, test_df, min_encoder_len):
+
+# Don't use this one
+def setup_tsdataset_mvp_mistake(train_df, val_df, test_df, min_encoder_len):
+    # create training and validation TS dataset 
+    training = TimeSeriesDataSet(
+      train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence
+      time_idx="timestep_idx_global",
+      target="GPP_NT_VUT_REF",
+      group_ids=["site_id"],
+      allow_missing_timesteps=False, # <---- turned on bc some rows are removed.
+      min_encoder_length=min_encoder_len,
+      max_encoder_length=min_encoder_len,
+      min_prediction_length=1,
+      max_prediction_length=1,
+      static_categoricals=["MODIS_IGBP","koppen_main","koppen_sub", "gap_flag_month", "gap_flag_hour"],
+      static_reals=[],
+      time_varying_known_categoricals=["year", "month", "day", "hour"],
+      time_varying_known_reals=["timestep_idx_global", 
+                                'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
+                                'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 
+                                'BESS-PAR', 'BESS-PARdiff', 'BESS-RSDN', 'CSIF-SIFdaily', 'PET', 'Ts', 
+                                'ESACCI-sm', 'NDWI', 'Percent_Snow', 'Fpar', 'Lai', 'LST_Day','LST_Night'],
+      time_varying_unknown_categoricals=[], 
+      time_varying_unknown_reals=["GPP_NT_VUT_REF"],
+      target_normalizer=None,
+      categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
+                            'koppen_main': NaNLabelEncoder(add_nan=True),
+                            'koppen_sub': NaNLabelEncoder(add_nan=True),
+                            'year': NaNLabelEncoder(add_nan=True), # temp for subset
+                            'month': NaNLabelEncoder(add_nan=True), # temp for subset
+                            'day': NaNLabelEncoder(add_nan=True), # temp for subset
+                            },
+      add_relative_time_idx=True,
+      add_target_scales=False, # <------- turned off
+      add_encoder_length=False, # <------- turned off
+    )
+
+    validation = TimeSeriesDataSet.from_dataset(training, val_df, predict=False, stop_randomization=True)
+    
+    if test_df is not None:
+        testing = TimeSeriesDataSet.from_dataset(training, test_df, predict=False, stop_randomization=True)
+    else:
+        testing = None
+
+    return (training, validation, testing)
+
+# Use this instead!!
+def setup_tsdataset(train_df, val_df, test_df, min_encoder_len):
     # create training and validation TS dataset 
     training = TimeSeriesDataSet(
       train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence
@@ -177,9 +223,7 @@ def setup_train_val_tsdataset(train_df, val_df, test_df, min_encoder_len):
       categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
                             'koppen_main': NaNLabelEncoder(add_nan=True),
                             'koppen_sub': NaNLabelEncoder(add_nan=True),
-                            'year': NaNLabelEncoder(add_nan=True), # temp for subset
-                            'month': NaNLabelEncoder(add_nan=True), # temp for subset
-                            'day': NaNLabelEncoder(add_nan=True), # temp for subset
+                            'year': NaNLabelEncoder(add_nan=False),
                             },
       add_relative_time_idx=True,
       add_target_scales=False, # <------- turned off

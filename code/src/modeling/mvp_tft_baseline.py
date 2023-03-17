@@ -77,10 +77,11 @@ if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
 
-# split data
+# setup datasets data
 train_df, val_df, test_df = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
-train_df, val_df, test_df = subset_data(train_df, val_df, test_df, SUBSET_LEN)
-training, validation, _ = setup_train_val_tsdataset(train_df, val_df, None, ENCODER_LEN)
+train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
+training, validation, _ = setup_tsdataset_mvp_mistake(train_df, val_df, None, ENCODER_LEN)
+del test_df
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
