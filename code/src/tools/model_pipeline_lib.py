@@ -19,7 +19,6 @@ from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
 import torch.nn as nn
-import hydroeval as he
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
@@ -28,6 +27,7 @@ from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimi
 from pytorch_forecasting import BaseModel, MAE
 from pytorch_forecasting.metrics.point import RMSE
 from pytorch_forecasting.data.encoders import NaNLabelEncoder
+
 
 from sklearn.metrics import r2_score
 from timeit import default_timer
@@ -196,26 +196,53 @@ def setup_train_val_tsdataset(train_df, val_df, test_df, min_encoder_len):
     return (training, validation, testing)
           
 # Eval Functions
+def nash_sutcliffe(observed_values, predicted_values):
+    numerator = torch.sum((observed_values - predicted_values)**2)
+    denominator = torch.sum((observed_values - torch.mean(observed_values))**2)
+    nse_val = 1 - (numerator / denominator)
+    return nse_val
+
+def numpy_normalised_quantile_loss(y, y_pred, quantile):
+    """Computes normalised quantile loss for numpy arrays.
+    ref: https://github.com/google-research/google-research/blob/master/tft/script_train_fixed_params.py
+    Uses the q-Risk metric as defined in the "Training Procedure" section of the main TFT paper.
+    Args:
+    y: Targets
+    y_pred: Predictions
+    quantile: Quantile to use for loss calculations (between 0 & 1)
+    Returns:
+    Float for normalised quantile loss.
+    """
+    prediction_underflow = y - y_pred
+    weighted_errors = quantile * np.maximum(prediction_underflow, 0.) \
+      + (1. - quantile) * np.maximum(-prediction_underflow, 0.)
+
+    return 2 * (weighted_errors.mean()) / (y.abs().mean())
+
 
 def get_eval_mask(dataloader):
     return torch.logical_not(torch.cat([x['decoder_cont'][:, :, -1].reshape(-1) for x, y in iter(dataloader)]))
 
-def get_eval_metrics(actuals, predictions, mask=None):
-    y_true = actuals.reshape(-1)
-    y_pred = predictions.reshape(-1)
-    
+def get_eval_metrics(y_true, y_pred, mask=None, p90_pred=None):    
     # Apply mask if there is any
     if mask is not None:            
         y_true = y_true[mask.bool()]
         y_pred = y_pred[mask.bool()]
+        if p90_pred is not None:
+            p90_pred = p90_pred[mask.bool()]
 
-    # Get masked RMSE, MAE, NSE
     rmse = torch.sqrt(torch.mean((y_true - y_pred) ** 2))
     mae = torch.mean((y_true - y_pred).abs())
-    nse = he.nse(y_true.numpy(), y_pred.numpy())
+    nse = nash_sutcliffe(y_true, y_pred)
     r2 = r2_score(y_true.numpy(), y_pred.numpy())
+    p50_loss = numpy_normalised_quantile_loss(y_true, y_pred, 0.5)
+    evals = {"rmse": rmse.item(), "mae": mae.item(), "nse": nse.item(), "r2": r2, "p50_loss": p50_loss.item()}
 
-    return {"rmse": rmse.item(), "mae": mae.item(), "nse": nse, "r2": r2}
+    if p90_pred is not None:
+        p90_loss = numpy_normalised_quantile_loss(y_true, p90_pred, 0.9)
+        evals["p90_loss"] = p90_loss.item()
+    
+    return evals
 
 # Mask metrics for validation set
 def masked_eval_metrics(dataloader, model):
@@ -231,7 +258,7 @@ def masked_eval_metrics(dataloader, model):
     # Get masked RMSE, MAE, NSE
     masked_rmse = torch.sqrt(torch.mean((masked_y_true - masked_y_pred) ** 2))
     masked_mae = torch.mean((masked_y_true - masked_y_pred).abs())
-    masked_nse = he.nse(masked_y_true.reshape(-1).numpy(), masked_y_pred.reshape(-1).numpy())
+    masked_nse = nash_sutcliffe(masked_y_true.reshape(-1).numpy(), masked_y_pred.reshape(-1).numpy())
     masked_r2 = r2_score(masked_y_true.reshape(-1).numpy(), masked_y_pred.reshape(-1).numpy())
 
     return masked_rmse, masked_mae, masked_nse, masked_r2
