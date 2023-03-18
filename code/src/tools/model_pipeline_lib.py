@@ -232,9 +232,6 @@ def setup_tsdataset(train_df, val_df, test_df, min_encoder_len):
                             'koppen_main': NaNLabelEncoder(add_nan=True),
                             'koppen_sub': NaNLabelEncoder(add_nan=True),
                             'year': NaNLabelEncoder(add_nan=True),
-                            'month': NaNLabelEncoder(add_nan=True),
-                            'day': NaNLabelEncoder(add_nan=True),
-                            'hour': NaNLabelEncoder(add_nan=True),
                             },
       add_relative_time_idx=True,
       add_target_scales=False, # <------- turned off
