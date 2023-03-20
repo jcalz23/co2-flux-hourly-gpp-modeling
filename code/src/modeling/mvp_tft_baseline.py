@@ -80,7 +80,7 @@ print(f"Experiment logs saved to {exp_model_dir}.")
 # setup datasets data
 train_df, val_df, test_df = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
 train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
-training, validation, _ = setup_tsdataset_mvp_mistake(train_df, val_df, None, ENCODER_LEN)
+training, validation, _ = setup_tsdataset(train_df, val_df, None, ENCODER_LEN)
 del test_df
 
 # create dataloaders for model
@@ -107,7 +107,7 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=4, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=3, mode="min",
                                     check_finite=True, verbose=False,)
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard

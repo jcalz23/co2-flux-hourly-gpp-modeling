@@ -75,9 +75,17 @@ print(f"Training timestemp length = {SUBSET_LEN}.")
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
 exp_fname = f"tft_model_{exp_name}_{experiment_ts}"
 exp_model_dir = model_dir + os.sep + exp_fname
+exp_model_dir = "/root/co2-flux-hourly-gpp-modeling/data/models/tft_model_1yrtrain_tuning_230318_1906"
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
+
+# save study results - also we can resume tuning at a later point in time
+loaded_study = None
+with open(exp_model_dir + os.sep + "study.pkl", "rb") as fin:
+    loaded_study = pickle.load(fin)
+if loaded_study is not None:
+    print(f"Previous study has {len(loaded_study.trials) } trails.")
 
 # setup datasets
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
@@ -86,18 +94,10 @@ training, validation, _ = setup_tsdataset(train_df, val_df, None, ENCODER_LEN)
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
-batch_size = 64  # set this between 32 to 128
+batch_size = 128  # set this between 32 to 128
 cpu_count = os.cpu_count()
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
-
-# Create model result directory
-experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
-exp_fname = f"tft_model_{exp_name}_{experiment_ts}"
-exp_model_dir = model_dir + os.sep + exp_fname
-if not (os.path.exists(exp_model_dir)):
-    os.makedirs(exp_model_dir)
-print(f"Experiment logs saved to {exp_model_dir}.")
 
 # Setup trainer callbacks
 early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=3, mode="min",
@@ -112,7 +112,7 @@ study = custom_optimize_hyperparameters(
     gradient_clip_val_range=(0.01, 100.),  # Defaults to (0.01, 100.0)
     hidden_size_range=(128, 320),           # Defaults to (16, 265)
     hidden_continuous_size_range=(8, 64),  # Defaults to (8, 64).
-    attention_head_size_range=(1, 4),      # Defaults to (1, 4).
+    attention_head_size_range=(4, 4),      # Defaults to (1, 4).
     learning_rate_range=(1e-4, 1.0),       # Defaults to (1e-5, 1.0)
     dropout_range=(0.1, 0.3),              # Defaults to (0.1, 0.3).
     trainer_callbacks=[early_stop_callback],
@@ -122,6 +122,7 @@ study = custom_optimize_hyperparameters(
     logging_metrics=nn.ModuleList([MAE(), RMSE()]), #SMAPE(), #MAPE() #<---- added metrics to report in TensorBoard
     optimizer="adam",
     log_dir = exp_model_dir,
+    study = loaded_study,
     verbose = 2
 )
 
@@ -131,11 +132,3 @@ with open(exp_model_dir + os.sep + "study.pkl", "wb") as fout:
 
 # show best hyperparameters
 print(study.best_trial.params)
-# load the best model according to the validation loss
-best_model_path = trainer.checkpoint_callback.best_model_path
-print(" Best model path: " + best_model_path)
-best_tft = TemporalFusionTransformer.load_from_checkpoint(best_model_path)
-
-local_model_path = exp_model_dir + os.sep + f"best_model.pth"
-torch.save(best_tft.state_dict(), local_model_path)
-print(f"Saved model to {local_model_path}")
