@@ -239,12 +239,13 @@ class PrepareMonthlyData:
 
 class PrepareAllSitesHourly:
     def __init__(self, site_metadata_filename, monthly_data_filename, 
-                hourly_features, metadata_features, target_variable, data_dir):
+                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
         self.target_variable = target_variable
+        self.target_variable_qc = target_variable_qc
         self.data_dir = data_dir
 
     def add_time_index(self, df, time_col, duration, site_id):
@@ -731,7 +732,7 @@ class TFTDataTransformer:
     print(f"Uploading train dataset to {train_blob_name}...")
     azStorageClient.uploadBlob(container, train_blob_name, train_file, overwrite=True)
     
-    # Upload trvalain dataset
+    # Upload val dataset
     val_file = BytesIO()
     self.val_df.to_parquet(val_file, engine='pyarrow')
     val_file.seek(0)
