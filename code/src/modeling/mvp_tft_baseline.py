@@ -17,8 +17,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
-import torch.nn as nn
-import hydroeval as he
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
@@ -107,7 +105,7 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=3, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=4, mode="min",
                                     check_finite=True, verbose=False,)
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
