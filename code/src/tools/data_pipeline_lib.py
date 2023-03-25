@@ -239,11 +239,12 @@ class PrepareMonthlyData:
 
 class PrepareAllSitesHourly:
     def __init__(self, site_metadata_filename, monthly_data_filename, 
-                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None):
+                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None, msc_features = None):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
+        self.msc_features = msc_features
         self.target_variable = target_variable
         self.target_variable_qc = target_variable_qc
         self.data_dir = data_dir
@@ -332,6 +333,44 @@ class PrepareAllSitesHourly:
         if len(df_init) != len(df_imputed):
             print("IMPUTATION ERROR: Post imputation df has different row count than initial df")
 
+
+    def engineer_msc_features(self, df):
+        seasons = {
+                "Winter": [12, 1, 2],
+                "Spring": [3, 4, 5],
+                "Summer": [6, 7, 8],
+                "Fall": [9, 10, 11]
+            }
+
+        # Function to map months to the corresponding season
+        def month_to_season(month):
+            for season, months in seasons.items():
+                if month in months:
+                    return season
+            return None
+        df['season'] = df.month.map(month_to_season)
+
+        # Loop through input features
+        for feature in self.msc_features:
+            # Get MSC features
+            mean_cycles = {}
+            for season, months in seasons.items():
+                mean_cycles[season] = df[df['season'] == season][feature].mean()
+
+            # Get Amplitude, Min features
+            amplitude_msc = max(mean_cycles.values()) - min(mean_cycles.values())
+            min_msc = min(mean_cycles.values())
+
+            # Merge into DF
+            for season, mean_value in mean_cycles.items():
+                df.loc[df['season'] == season, f"{feature}_szn_mean"] = mean_value
+            df[f"{feature}_amp_msc"] = amplitude_msc
+            df[f"{feature}_min_msc"] = min_msc
+
+        # Remove season col
+        df.drop(columns=['season'], inplace=True)
+        return df
+    
 
     def filter_date_range(self, df, start_date, end_date, time_col, site_id, missing_thresh=0.2):
         df.set_index(time_col, inplace=True)
@@ -436,6 +475,10 @@ class PrepareAllSitesHourly:
           # Move from HH to H level
           site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
           site_df.drop('minute', axis=1, inplace=True)
+
+          # Engineer MSC-related features (putting b4 date filter to build historical szn avgs)
+          if self.msc_features is not None:
+            site_df = self.engineer_msc_features(site_df)
             
           # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
           if start_date is not None and end_date is not None:
