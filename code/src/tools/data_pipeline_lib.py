@@ -146,7 +146,6 @@ class PrepareMonthlyData:
                 # Get start and end range for given site <------------------------- CREATE DF NEXT TIME TO SAVE TIME (30 seconds per run)
                 site_file = f'data_full_half_hourly_raw_v0_1_{s}.csv'
                 site_hr_df = pd.read_csv(f"{self.data_dir}/{site_file}", usecols=['SITE_ID', 'datetime', 'year', 'month'])
-                dates = [d for d in pd.date_range(start=site_hr_df['datetime'].min(), end=site_hr_df['datetime'].max(), freq='M')]
 
                 # Create range of monthly dates from beginning of minimum month to beginning of next month after maximum month
                 site_hr_df['datetime'] = pd.to_datetime(site_hr_df['datetime'])
@@ -239,7 +238,8 @@ class PrepareMonthlyData:
 
 class PrepareAllSitesHourly:
     def __init__(self, site_metadata_filename, monthly_data_filename, 
-                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None, msc_features = None):
+                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None,
+                 msc_features = None, precip_sum_features=False):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
         self.hourly_features = hourly_features
@@ -248,6 +248,7 @@ class PrepareAllSitesHourly:
         self.target_variable = target_variable
         self.target_variable_qc = target_variable_qc
         self.data_dir = data_dir
+        self.precip_sum_features = precip_sum_features
 
     def add_time_index(self, df, time_col, duration, site_id):
         df['gap_flag_hour'] = int(0)
@@ -371,6 +372,18 @@ class PrepareAllSitesHourly:
         df.drop(columns=['season'], inplace=True)
         return df
     
+    def engineer_prcp_running_sums(self, df, precip_col='P_ERA'):
+        # Set the datetime column as index
+        df = df.set_index('datetime')
+
+        # Calculate the running sum of the last week's precipitation (168 hours)
+        df[f"prcp_week_sum"] = df[precip_col].rolling(window='168H').sum()
+        df[f"prcp_month_sum"] = df[precip_col].rolling(window='720H').sum()
+
+        # Reset the index
+        df.reset_index(inplace=True)
+        return df
+    
 
     def filter_date_range(self, df, start_date, end_date, time_col, site_id, missing_thresh=0.2):
         df.set_index(time_col, inplace=True)
@@ -442,7 +455,8 @@ class PrepareAllSitesHourly:
     
 
     def site_data_cleanup(self, site_metadata_df, imp_cols, resample, impute, impute_method,
-                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None):
+                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None, 
+                          precip_sum_features=False):
         data_df = None
         num_records = 0
         available_site_count = 0
@@ -482,7 +496,7 @@ class PrepareAllSitesHourly:
             
           # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
           if start_date is not None and end_date is not None:
-            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, r.site_id, missing_thresh)
           
           if site_df is None:
               continue
@@ -500,9 +514,12 @@ class PrepareAllSitesHourly:
 
           # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
           random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
-          
           if i == random_check:   
               site_df_pre_imp = site_df.copy()
+                
+          # Add precipitation rolling sum features (week, month)
+          if self.precip_sum_features:
+              site_df = self.engineer_prcp_running_sums(site_df)
           
           # Impute missing values at site-level, otherwise fillna w/ -1 at very end
           if (impute) & (site_df.isna().sum().sum() != 0):
@@ -584,6 +601,8 @@ class PrepareAllSitesHourly:
         features = list(filter(lambda x: x not in remove_cols, features))
         data_df = data_df[([self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour'] + features + ['gap_flag_hour', 'gap_flag_month'])]
 
+        
+        
         return data_df
 
 if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
