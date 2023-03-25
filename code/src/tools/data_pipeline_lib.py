@@ -239,7 +239,7 @@ class PrepareMonthlyData:
 class PrepareAllSitesHourly:
     def __init__(self, site_metadata_filename, monthly_data_filename, 
                 hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None,
-                 msc_features = None, precip_sum_features=False):
+                 msc_features = None, precip_sum_features=False, monthly_features=None):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
         self.hourly_features = hourly_features
@@ -249,6 +249,7 @@ class PrepareAllSitesHourly:
         self.target_variable_qc = target_variable_qc
         self.data_dir = data_dir
         self.precip_sum_features = precip_sum_features
+        self.monthly_features = monthly_features
 
     def add_time_index(self, df, time_col, duration, site_id):
         df['gap_flag_hour'] = int(0)
@@ -441,6 +442,10 @@ class PrepareAllSitesHourly:
         if monthly_df.isna().sum().sum() != 0:
             print(f"{monthly_df.isna().sum().sum()} missing values in monthly data")
 
+        # Subset cols (if applied)
+        if self.monthly_features is not None:
+            monthly_df = monthly_df[['SITE_ID', 'year', 'month'] + self.monthly_features].copy()
+            
         # Merge
         data_df = data_df.merge(monthly_df, how='left',
                         left_on =['site_id', 'year', 'month'],
@@ -597,9 +602,9 @@ class PrepareAllSitesHourly:
 
         # Reorder columns
         features = data_df.columns.to_list()
-        remove_cols = [self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour', 'gap_flag_hour', 'gap_flag_month']
+        remove_cols = [self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour', 'gap_flag_hour']
         features = list(filter(lambda x: x not in remove_cols, features))
-        data_df = data_df[([self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour'] + features + ['gap_flag_hour', 'gap_flag_month'])]
+        data_df = data_df[([self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour'] + features + ['gap_flag_hour'])]
 
         
         
