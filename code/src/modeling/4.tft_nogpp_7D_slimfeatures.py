@@ -2,7 +2,6 @@ MY_HOME_ABS_PATH = "/root/co2-flux-hourly-gpp-modeling/"
 
 import os
 os.chdir(MY_HOME_ABS_PATH)
-
 import sys
 import warnings
 warnings.filterwarnings("ignore")
@@ -81,7 +80,7 @@ local_file = tmp_dir + os.sep + blob_name
 data_df = get_raw_datasets(container, blob_name)
 
 # Define experiment
-exp_name = "1YrTrain_1DEncode_NoGPP_SlimFeatures"
+exp_name = "1YrTrain_3DEncode_BigNetwork_NoGPP"
 
 # Experiment constants
 VAL_INDEX  = 3
@@ -89,13 +88,6 @@ TEST_INDEX = 4
 SUBSET_LEN = 24*365 # 1 year
 ENCODER_LEN = 24    # 1 day
 print(f"Training timestemp length = {SUBSET_LEN}.")
-
-# Subset data_df
-data_df = data_df[['GPP_NT_VUT_REF', 'site_id', 'timestep_idx_local',
-       'timestep_idx_global', 'datetime', 'month', 'hour', 'TA_ERA',
-       'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA', 'EVI', 'NDVI',
-       'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'koppen_main',
-       'ESACCI-sm', 'BESS-RSDN', 'gap_flag_hour']].copy()
 
 # Create model result directory
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
@@ -105,6 +97,7 @@ if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
 
+# Redefine TSDS
 def setup_tsdataset_nogpp(train_df, val_df, test_df, min_encoder_len):
     # create training and validation TS dataset 
     training = TimeSeriesDataSet(
@@ -117,14 +110,20 @@ def setup_tsdataset_nogpp(train_df, val_df, test_df, min_encoder_len):
       max_encoder_length=min_encoder_len,
       min_prediction_length=1,
       max_prediction_length=1,
-      static_categoricals=["koppen_main"],
+      static_categoricals=["MODIS_IGBP","koppen_main","koppen_sub"],
       static_reals=[],
       time_varying_known_categoricals=["month", "hour"],
-      time_varying_known_reals=["timestep_idx_global", 'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA', 'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 'BESS-RSDN', 'ESACCI-sm'],
-      time_varying_unknown_categoricals=["gap_flag_hour"], 
+      time_varying_known_reals=["timestep_idx_global", 
+                                'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
+                                'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 
+                                'BESS-PAR', 'BESS-PARdiff', 'BESS-RSDN', 'CSIF-SIFdaily', 'PET', 'Ts', 
+                                'ESACCI-sm', 'NDWI', 'Percent_Snow', 'Fpar', 'Lai', 'LST_Day','LST_Night'],
+      time_varying_unknown_categoricals=["gap_flag_month", "gap_flag_hour"], 
       time_varying_unknown_reals=[],
       target_normalizer=None,
-      categorical_encoders={'koppen_main': NaNLabelEncoder(add_nan=True),
+      categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
+                            'koppen_main': NaNLabelEncoder(add_nan=True),
+                            'koppen_sub': NaNLabelEncoder(add_nan=True),
                             },
       add_relative_time_idx=True,
       add_target_scales=False,
@@ -139,6 +138,8 @@ def setup_tsdataset_nogpp(train_df, val_df, test_df, min_encoder_len):
         testing = None
 
     return (training, validation, testing)
+
+
 
 # setup datasets data
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
@@ -155,17 +156,18 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Create TFT model from dataset
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=0.0002,
-    hidden_size=32,  # most important hyperparameter apart from learning rate
-    attention_head_size=2, # Set to up to 4 for large datasets
-    dropout=0.125, # Between 0.1 and 0.3 are good values
-    hidden_continuous_size=32,  # set to <= hidden_size
-    output_size=1,  # 7 quantiles by default
-    loss=RMSE(),
-    reduce_on_plateau_patience=5, # reduce learning rate if no improvement in validation loss after x epochs
+    learning_rate=0.001,
+    hidden_size=256,  # most important hyperparameter apart from learning rate
+    attention_head_size=4, # Set to up to 4 for large datasets
+    dropout=0.2, # Between 0.1 and 0.3 are good values
+    hidden_continuous_size=128,  # set to <= hidden_size
+    output_size=7,  # 7 quantiles by default
+    loss=QuantileLoss(),
+    logging_metrics=nn.ModuleList([MAE(), RMSE()]),
+    reduce_on_plateau_patience=4, # reduce learning rate if no improvement in validation loss after x epochs
     optimizer="adam"
 )
-print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
+print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
 early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, mode="min",
@@ -174,9 +176,9 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=40,
+    max_epochs=25,
     enable_model_summary=True,
-    gradient_clip_val=0.15,
+    #gradient_clip_val=2,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
     devices=1,
