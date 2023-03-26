@@ -1,7 +1,6 @@
 MY_HOME_ABS_PATH = "/root/co2-flux-hourly-gpp-modeling/"
 
 import os
-os.chdir(MY_HOME_ABS_PATH)
 import sys
 import warnings
 warnings.filterwarnings("ignore")
@@ -30,12 +29,13 @@ from timeit import default_timer
 from datetime import datetime
 import gc
 import pickle
+import multiprocessing as mp
 
 # Load locale custome modules
-os.chdir(MY_HOME_ABS_PATH)
-sys.path.append('./.cred')
-sys.path.append('./code/src/tools')
-sys.path.append(os.path.abspath("./code/src/tools"))
+#os.chdir(MY_HOME_ABS_PATH)
+sys.path.append(f'{MY_HOME_ABS_PATH}/.cred')
+sys.path.append(f'{MY_HOME_ABS_PATH}/code/src/tools')
+sys.path.append(os.path.abspath(f"{MY_HOME_ABS_PATH}/code/src/tools"))
   
 from CloudIO.AzStorageClient import AzStorageClient
 from data_pipeline_lib import *
@@ -45,28 +45,19 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.5f' % x)
 pl.seed_everything(42)
 
-def get_raw_datasets(container, blob_name):
-    local_file = tmp_dir + os.sep + blob_name
-    data_df = None
-    if not (os.path.exists(local_file)):
-        azStorageClient = AzStorageClient(az_cred_file)
-        file_stream = azStorageClient.downloadBlob2Stream(container, blob_name)
-        data_df = pd.read_parquet(file_stream, engine='pyarrow')
-        data_df.to_parquet(local_file)
-    else:
-        data_df = pd.read_parquet(local_file)
-    
-    print(f"Data size: {data_df.shape}")
-    
-    # Convert Dtypes
-    cat_cols = ["year", "month", "day", "hour", "MODIS_IGBP", "koppen_main", "koppen_sub", 
-                "gap_flag_month", "gap_flag_hour"]
-    for col in cat_cols:
-        data_df[col] = data_df[col].astype(str).astype("category")
-    
-    print(f"Data Columns: {data_df.columns}")
-    print(f"NA count: {data_df.isna().sum().sum()}")
-    return data_df
+print(os.getcwd())
+# # Spawn GPUS
+# print("1")
+# if __name__ == '__main__':
+#     mp.set_start_method('spawn')
+
+# Print GPUs available
+print("2")
+if torch.cuda.is_available():
+    device_count = torch.cuda.device_count()
+    print(f"Number of available GPUs: {device_count}")
+else:
+    print("GPU is not available on this system.")
 
 # Download full data
 root_dir  = MY_HOME_ABS_PATH
@@ -87,7 +78,7 @@ exp_name = "1YrTrain_3DEncode_BigNetwork_NoGPP"
 VAL_INDEX  = 3
 TEST_INDEX = 4
 SUBSET_LEN = 24*365 # 1 year
-ENCODER_LEN = 24    # 1 day
+ENCODER_LEN = 24*3   # 3 day
 print(f"Training timestemp length = {SUBSET_LEN}.")
 
 # Create model result directory
@@ -97,50 +88,6 @@ exp_model_dir = model_dir + os.sep + exp_fname
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
-
-# Redefine TSDS
-def setup_tsdataset_nogpp(train_df, val_df, test_df, min_encoder_len):
-    # create training and validation TS dataset 
-    training = TimeSeriesDataSet(
-      train_df, 
-      time_idx="timestep_idx_global",
-      target="GPP_NT_VUT_REF",
-      group_ids=["site_id"],
-      allow_missing_timesteps=False, 
-      min_encoder_length=min_encoder_len,
-      max_encoder_length=min_encoder_len,
-      min_prediction_length=1,
-      max_prediction_length=1,
-      static_categoricals=["MODIS_IGBP","koppen_main","koppen_sub"],
-      static_reals=[],
-      time_varying_known_categoricals=["month", "hour"],
-      time_varying_known_reals=["timestep_idx_global", 
-                                'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
-                                'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 
-                                'BESS-PAR', 'BESS-PARdiff', 'BESS-RSDN', 'CSIF-SIFdaily', 'PET', 'Ts', 
-                                'ESACCI-sm', 'NDWI', 'Percent_Snow', 'Fpar', 'Lai', 'LST_Day','LST_Night'],
-      time_varying_unknown_categoricals=["gap_flag_month", "gap_flag_hour"], 
-      time_varying_unknown_reals=[],
-      target_normalizer=None,
-      categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
-                            'koppen_main': NaNLabelEncoder(add_nan=True),
-                            'koppen_sub': NaNLabelEncoder(add_nan=True),
-                            },
-      add_relative_time_idx=True,
-      add_target_scales=False,
-      add_encoder_length=False,
-    )
-
-    validation = TimeSeriesDataSet.from_dataset(training, val_df, predict=False, stop_randomization=True)
-    
-    if test_df is not None:
-        testing = TimeSeriesDataSet.from_dataset(training, test_df, predict=False, stop_randomization=True)
-    else:
-        testing = None
-
-    return (training, validation, testing)
-
-
 
 # setup datasets data
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
@@ -177,14 +124,15 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=25,
+    max_epochs=30,
     enable_model_summary=True,
     #gradient_clip_val=2,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
-    devices=1,
+    devices="auto", 
     callbacks=[lr_logger, early_stop_callback],
     logger=logger,
+    strategy="ddp",
 )
 
 
