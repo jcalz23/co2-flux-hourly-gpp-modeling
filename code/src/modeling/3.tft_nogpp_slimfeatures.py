@@ -147,7 +147,7 @@ training, validation, _ = setup_tsdataset_nogpp(train_df, val_df, None, ENCODER_
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
-batch_size = 128  # set this between 32 to 128
+batch_size = 256  # set this between 32 to 128
 cpu_count = os.cpu_count()
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=False)
@@ -155,11 +155,11 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Create TFT model from dataset
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=0.00015,
-    hidden_size=128,  # most important hyperparameter apart from learning rate
-    attention_head_size=1, # Set to up to 4 for large datasets
+    learning_rate=0.0002,
+    hidden_size=32,  # most important hyperparameter apart from learning rate
+    attention_head_size=2, # Set to up to 4 for large datasets
     dropout=0.125, # Between 0.1 and 0.3 are good values
-    hidden_continuous_size=52,  # set to <= hidden_size
+    hidden_continuous_size=32,  # set to <= hidden_size
     output_size=1,  # 7 quantiles by default
     loss=RMSE(),
     reduce_on_plateau_patience=5, # reduce learning rate if no improvement in validation loss after x epochs
@@ -168,13 +168,13 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=4, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=10, mode="min",
                                     check_finite=True, verbose=False,)
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=20,
+    max_epochs=40,
     enable_model_summary=True,
     gradient_clip_val=0.15,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
