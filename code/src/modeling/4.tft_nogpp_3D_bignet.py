@@ -59,7 +59,8 @@ def get_raw_datasets(container, blob_name):
     print(f"Data size: {data_df.shape}")
     
     # Convert Dtypes
-    cat_cols = [ "month", "hour", "koppen_main", "gap_flag_hour"]
+    cat_cols = ["year", "month", "day", "hour", "MODIS_IGBP", "koppen_main", "koppen_sub", 
+                "gap_flag_month", "gap_flag_hour"]
     for col in cat_cols:
         data_df[col] = data_df[col].astype(str).astype("category")
     
