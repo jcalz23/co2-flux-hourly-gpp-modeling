@@ -3,6 +3,7 @@ import sys
 import random
 import pandas as pd
 import numpy as np
+import joblib
 
 from datetime import datetime 
 from io import BytesIO
@@ -135,7 +136,7 @@ class PrepareMonthlyData:
         print(f"# sites dropped bc not available in data_dir: {init_sites - len(self.month_df['SITE_ID'].unique())}")
         
         # Loop through hourly site data to determine which months are present
-        for i, s in tqdm(enumerate(self.month_df['SITE_ID'].unique())):
+        for i, s in enumerate(self.month_df['SITE_ID'].unique()):
             # Get monthly data for site
             site_month = self.month_df[self.month_df['SITE_ID'] == s].copy()
             site_month.reset_index(drop = True, inplace=True)
@@ -145,7 +146,6 @@ class PrepareMonthlyData:
                 # Get start and end range for given site <------------------------- CREATE DF NEXT TIME TO SAVE TIME (30 seconds per run)
                 site_file = f'data_full_half_hourly_raw_v0_1_{s}.csv'
                 site_hr_df = pd.read_csv(f"{self.data_dir}/{site_file}", usecols=['SITE_ID', 'datetime', 'year', 'month'])
-                dates = [d for d in pd.date_range(start=site_hr_df['datetime'].min(), end=site_hr_df['datetime'].max(), freq='M')]
 
                 # Create range of monthly dates from beginning of minimum month to beginning of next month after maximum month
                 site_hr_df['datetime'] = pd.to_datetime(site_hr_df['datetime'])
@@ -237,22 +237,19 @@ class PrepareMonthlyData:
         
 
 class PrepareAllSitesHourly:
-    def __init__(self, site_metadata_filename, monthly_data_filename, train_sites, val_sites, test_sites, 
-                hourly_features, metadata_features, target_variable_qc, target_variable, data_dir):
+    def __init__(self, site_metadata_filename, monthly_data_filename, 
+                hourly_features, metadata_features, target_variable, data_dir, target_variable_qc=None,
+                 msc_features = None, precip_sum_features=False, monthly_features=None):
         self.site_metadata_filename = site_metadata_filename
         self.monthly_data_filename = monthly_data_filename
-        self.train_sites = train_sites
-        self.val_sites = val_sites
-        self.test_sites = test_sites
-        if train_sites is not None and val_sites is not None and test_sites is not None:
-          self.all_sites = train_sites + val_sites + test_sites
-        else:
-          self.all_sites = None
         self.hourly_features = hourly_features
         self.metadata_features = metadata_features
-        self.target_variable_qc = target_variable_qc
+        self.msc_features = msc_features
         self.target_variable = target_variable
+        self.target_variable_qc = target_variable_qc
         self.data_dir = data_dir
+        self.precip_sum_features = precip_sum_features
+        self.monthly_features = monthly_features
 
     def add_time_index(self, df, time_col, duration, site_id):
         df['gap_flag_hour'] = int(0)
@@ -339,12 +336,63 @@ class PrepareAllSitesHourly:
             print("IMPUTATION ERROR: Post imputation df has different row count than initial df")
 
 
-    def filter_date_range(self, df, start_date, end_date, time_col, missing_thresh=0.2):
+    def engineer_msc_features(self, df):
+        seasons = {
+                "Winter": [12, 1, 2],
+                "Spring": [3, 4, 5],
+                "Summer": [6, 7, 8],
+                "Fall": [9, 10, 11]
+            }
+
+        # Function to map months to the corresponding season
+        def month_to_season(month):
+            for season, months in seasons.items():
+                if month in months:
+                    return season
+            return None
+        df['season'] = df.month.map(month_to_season)
+
+        # Loop through input features
+        for feature in self.msc_features:
+            # Get MSC features
+            mean_cycles = {}
+            for season, months in seasons.items():
+                mean_cycles[season] = df[df['season'] == season][feature].mean()
+
+            # Get Amplitude, Min features
+            amplitude_msc = max(mean_cycles.values()) - min(mean_cycles.values())
+            min_msc = min(mean_cycles.values())
+
+            # Merge into DF
+            for season, mean_value in mean_cycles.items():
+                df.loc[df['season'] == season, f"{feature}_szn_mean"] = mean_value
+            df[f"{feature}_amp_msc"] = amplitude_msc
+            df[f"{feature}_min_msc"] = min_msc
+
+        # Remove season col
+        df.drop(columns=['season'], inplace=True)
+        return df
+    
+    def engineer_prcp_running_sums(self, df, precip_col='P_ERA'):
+        # Set the datetime column as index
+        df = df.set_index('datetime')
+
+        # Calculate the running sum of the last week's precipitation (168 hours)
+        df[f"prcp_week_sum"] = df[precip_col].rolling(window='168H').sum()
+        df[f"prcp_month_sum"] = df[precip_col].rolling(window='720H').sum()
+
+        # Reset the index
+        df.reset_index(inplace=True)
+        return df
+    
+
+    def filter_date_range(self, df, start_date, end_date, time_col, site_id, missing_thresh=0.2):
         df.set_index(time_col, inplace=True)
         filtered_df = df.loc[start_date:end_date].copy()
 
         # Remove sites without at least one year of records
         if len(filtered_df) < 365*24:
+            print(f"{site_id} has less than 1 year of remaining sequences")
             return None
         else:
             # Remove sites that have > 20% gaps in sequence
@@ -354,6 +402,7 @@ class PrepareAllSitesHourly:
             missing_percentage = (total_expected_count - len(filtered_df)) / total_expected_count
 
             if missing_percentage > missing_thresh:
+                print(f"{site_id} has too many gaps, missing % = {missing_percentage}")
                 return None
             else:
                 filtered_df.reset_index(inplace=True)
@@ -363,8 +412,10 @@ class PrepareAllSitesHourly:
     def prep_metadata(self):
         site_metadata_df = pd.read_csv(self.site_metadata_filename, usecols = self.metadata_features)
         
-        if self.all_sites is not None:
-          site_metadata_df = site_metadata_df.loc[site_metadata_df['site_id'].isin(self.all_sites), ]
+        # Print out the site without monthly data
+        sites_missing_monthly = len(site_metadata_df.loc[site_metadata_df['monthly_data_available']!='Yes', ])
+        if sites_missing_monthly > 0:
+            print(f'Sites with missing monthly data: {sites_missing_monthly}')
         
         site_metadata_df = site_metadata_df.loc[site_metadata_df['monthly_data_available']=='Yes', ] # <---- not including sites that have zero monthly data (ask team)
         site_metadata_df.reset_index(inplace=True, drop=True)
@@ -391,6 +442,10 @@ class PrepareAllSitesHourly:
         if monthly_df.isna().sum().sum() != 0:
             print(f"{monthly_df.isna().sum().sum()} missing values in monthly data")
 
+        # Subset cols (if applied)
+        if self.monthly_features is not None:
+            monthly_df = monthly_df[['SITE_ID', 'year', 'month'] + self.monthly_features].copy()
+            
         # Merge
         data_df = data_df.merge(monthly_df, how='left',
                         left_on =['site_id', 'year', 'month'],
@@ -405,7 +460,8 @@ class PrepareAllSitesHourly:
     
 
     def site_data_cleanup(self, site_metadata_df, imp_cols, resample, impute, impute_method,
-                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None):
+                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh=0.2, c=None, 
+                          precip_sum_features=False):
         data_df = None
         num_records = 0
         available_site_count = 0
@@ -416,7 +472,7 @@ class PrepareAllSitesHourly:
         global_time_index_base = datetime(1970, 1, 1, 0, 0, 0)
 
         ## SITE-LEVEL CLEANING -> LOOP & CONCATENATE
-        for i, r in tqdm(site_metadata_df[['site_id','filename']].iterrows()):
+        for i, r in site_metadata_df[['site_id','filename']].iterrows():
           if not r.filename or type(r.filename) != type(""):
             print(f'SKIP: {r.site_id} is missing hourly data.')
             continue
@@ -438,13 +494,16 @@ class PrepareAllSitesHourly:
           # Move from HH to H level
           site_df = site_df.loc[site_df['datetime'].dt.minute == 0, ].copy()
           site_df.drop('minute', axis=1, inplace=True)
+
+          # Engineer MSC-related features (putting b4 date filter to build historical szn avgs)
+          if self.msc_features is not None:
+            site_df = self.engineer_msc_features(site_df)
             
           # Filter site date-range and drop sites without > 1 year and <20% gaps after trim
           if start_date is not None and end_date is not None:
-            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, missing_thresh)
+            site_df = self.filter_date_range(site_df, start_date, end_date, time_col, r.site_id, missing_thresh)
           
           if site_df is None:
-              print(f'SKIP: {r.site_id} does not have sufficient data in desired time period')
               continue
           else:
               retained_site_count += 1
@@ -459,13 +518,13 @@ class PrepareAllSitesHourly:
               site_df = site_df.reset_index()
 
           # Save site_df pre-imputation to check post-imputation (once per run, random site each time)
-          if self.all_sites is not None:
-            random_check = random.randint(0, len(self.all_sites))
-          else:
-            random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
-          
+          random_check = random.randint(0, site_metadata_df['site_id'].unique().shape[0])
           if i == random_check:   
               site_df_pre_imp = site_df.copy()
+                
+          # Add precipitation rolling sum features (week, month)
+          if self.precip_sum_features:
+              site_df = self.engineer_prcp_running_sums(site_df)
           
           # Impute missing values at site-level, otherwise fillna w/ -1 at very end
           if (impute) & (site_df.isna().sum().sum() != 0):
@@ -533,11 +592,6 @@ class PrepareAllSitesHourly:
                             weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c):
         
         site_metadata_df = self.prep_metadata()
-        
-        if self.all_sites is not None:
-          sites_missing_monthly = [s for s in self.all_sites if s not in site_metadata_df['site_id'].values]
-          if len(sites_missing_monthly):
-            print(f'Sites with missing monthly data: {sites_missing_monthly}')
 
         data_df = self.site_data_cleanup(site_metadata_df, imp_cols, resample, impute, impute_method, 
                                         impute_global, k, weights, n_fit, time_col, duration, start_date, end_date, missing_thresh, c)
@@ -548,10 +602,12 @@ class PrepareAllSitesHourly:
 
         # Reorder columns
         features = data_df.columns.to_list()
-        remove_cols = [self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour', 'gap_flag_hour', 'gap_flag_month']
+        remove_cols = [self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour', 'gap_flag_hour']
         features = list(filter(lambda x: x not in remove_cols, features))
-        data_df = data_df[([self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour'] + features + ['gap_flag_hour', 'gap_flag_month'])]
+        data_df = data_df[([self.target_variable, 'site_id', 'timestep_idx_local', 'timestep_idx_global', 'datetime', 'date', 'year', 'month', 'day', 'hour'] + features + ['gap_flag_hour'])]
 
+        
+        
         return data_df
 
 if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
@@ -655,13 +711,15 @@ if ("UseSpark" in os.environ) or (os.environ.get('UseSpark') == "true"):
         self.test_df.write.format("parquet").mode("overwrite").save(test_blob_path)
 
 class TFTDataTransformer:
-  def __init__(self, train_sites, val_sites, test_sites, \
-              data_file_path = None, data_df = None):
+  def __init__(self, train_sites, val_sites, test_sites, model_name='TFT', \
+              data_file_path = None, data_df = None, preproc_objects_dir = None):
     
     self.data_df = data_df 
     self.train_sites = train_sites
     self.val_sites = val_sites
     self.test_sites = test_sites
+    self.model_name = model_name
+    self.preproc_objects_dir = preproc_objects_dir
     self.scaler = None
 
     # Load data df
@@ -714,7 +772,9 @@ class TFTDataTransformer:
     val_df.loc[:,realNum_cols] = scaler.transform(val_df[realNum_cols])
     test_df.loc[:,realNum_cols] = scaler.transform(test_df[realNum_cols])
 
-    # Save scaler object <--- later
+    # Save scaler object
+    scaler_path = os.path.join(self.preproc_objects_dir, f'scaler_{self.model_name}.joblib')
+    joblib.dump(scaler, scaler_path)
     
     print(f"Train data size: {train_df.shape}.")
     print(f"Val data size: {val_df.shape}.")
@@ -728,7 +788,7 @@ class TFTDataTransformer:
     self.test_df = test_df
     return (train_df, val_df, test_df)
 
-  def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, test_blob_name):
+  def upload_train_test_to_azure(self, az_cred_file, container, train_blob_name, val_blob_name, test_blob_name):
     # Initialize AzStorageClient 
     azStorageClient = AzStorageClient(az_cred_file)
 
@@ -738,6 +798,13 @@ class TFTDataTransformer:
     train_file.seek(0)
     print(f"Uploading train dataset to {train_blob_name}...")
     azStorageClient.uploadBlob(container, train_blob_name, train_file, overwrite=True)
+    
+    # Upload val dataset
+    val_file = BytesIO()
+    self.val_df.to_parquet(val_file, engine='pyarrow')
+    val_file.seek(0)
+    print(f"Uploading val dataset to {val_blob_name}...")
+    azStorageClient.uploadBlob(container, val_blob_name, val_file, overwrite=True)
 
     # Upload test dataset
     test_file = BytesIO()
