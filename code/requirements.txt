@@ -12,5 +12,6 @@ plotly==5.13.0
 torch==1.13.1
 pytorch-lightning==1.9.0
 pytorch-forecasting==0.10.3
+joblib==1.2.0
 ipykernel
 tensorflow
