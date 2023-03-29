@@ -82,7 +82,8 @@ def get_raw_datasets(container, blob_name):
     cat_cols = ["year", "month", "day", "hour", "MODIS_IGBP", "koppen_main", "koppen_sub", 
                 "gap_flag_month", "gap_flag_hour"]
     for col in cat_cols:
-        data_df[col] = data_df[col].astype(str).astype("category")
+        if col in data_df.columns:
+            data_df[col] = data_df[col].astype(str).astype("category")
     
     print(f"Data Columns: {data_df.columns}")
     print(f"NA count: {data_df.isna().sum().sum()}")
