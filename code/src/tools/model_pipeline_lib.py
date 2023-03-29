@@ -327,7 +327,7 @@ def setup_tsdataset_nogpp_slimfeatures(train_df, val_df, test_df, min_encoder_le
 
     return (training, validation, testing)
 
-def setup_tsdataset_rdr_gpp(train_df, val_df, test_df, min_encoder_len):
+def setup_tsdataset_rfr_gpp(train_df, val_df, test_df, min_encoder_len):
     # create training and validation TS dataset 
     training = TimeSeriesDataSet(
       train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence

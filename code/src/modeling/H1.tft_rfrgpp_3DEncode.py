@@ -81,7 +81,7 @@ print(f"Experiment logs saved to {exp_model_dir}.")
 # setup datasets data
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
 train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
-training, validation, _ = setup_tsdataset_rdr_gpp(train_df, val_df, None, ENCODER_LEN)
+training, validation, _ = setup_tsdataset_rfr_gpp(train_df, val_df, None, ENCODER_LEN)
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
