@@ -458,13 +458,13 @@ def custom_optimize_hyperparameters(
     model_path: str,
     max_epochs: int = 20,
     n_trials: int = 100,
-    timeout: float = 3600 * 8.0,  # 8 hours
+    timeout: float = 3600 * 24.0 * 2,  # 2 days
     gradient_clip_val_range: Tuple[float, float] = (0.01, 100.0),
-    hidden_size_range: Tuple[int, int] = (16, 265),
-    hidden_continuous_size_range: Tuple[int, int] = (8, 64),
+    hidden_size_range: Tuple[int, int] = (10, 320),
+    hidden_continuous_size_range: Tuple[int, int] = (8, 160),
     attention_head_size_range: Tuple[int, int] = (1, 4),
-    dropout_range: Tuple[float, float] = (0.1, 0.3),
-    learning_rate_range: Tuple[float, float] = (1e-5, 1.0),
+    dropout_range: Tuple[float, float] = (0.1, 0.9),
+    learning_rate_range: Tuple[float, float] = (1e-5, 0.01),
     use_learning_rate_finder: bool = True,
     trainer_kwargs: Dict[str, Any] = {},
     trainer_callbacks: List[Callback] = None,
@@ -576,7 +576,7 @@ def custom_optimize_hyperparameters(
         kwargs["loss"] = copy.deepcopy(loss)
         model = TemporalFusionTransformer.from_dataset(
             train_dataloaders.dataset,
-            dropout=trial.suggest_uniform("dropout", *dropout_range),
+            dropout=trial.suggest_float("dropout", *dropout_range, step=0.1),
             hidden_size=hidden_size,
             hidden_continuous_size=trial.suggest_int(
                 "hidden_continuous_size",
