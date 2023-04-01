@@ -66,7 +66,7 @@ exp_name = "5YrTrain_2WkEncode_RFRGPP_slimFeatures"
 # Experiment constants
 VAL_INDEX  = 3
 TEST_INDEX = 4
-ENCODER_LEN = 24*14  # 30 days
+ENCODER_LEN = 24*14  # 14 days
 
 def setup_tsdataset_rfr_gpp_slim(train_df, val_df, test_df, min_encoder_len):
     # create training and validation TS dataset 
