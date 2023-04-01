@@ -82,7 +82,8 @@ def get_raw_datasets(container, blob_name):
     cat_cols = ["year", "month", "day", "hour", "MODIS_IGBP", "koppen_main", "koppen_sub", 
                 "gap_flag_month", "gap_flag_hour"]
     for col in cat_cols:
-        data_df[col] = data_df[col].astype(str).astype("category")
+        if col in data_df.columns:
+            data_df[col] = data_df[col].astype(str).astype("category")
     
     print(f"Data Columns: {data_df.columns}")
     print(f"NA count: {data_df.isna().sum().sum()}")
@@ -326,6 +327,47 @@ def setup_tsdataset_nogpp_slimfeatures(train_df, val_df, test_df, min_encoder_le
 
     return (training, validation, testing)
 
+def setup_tsdataset_rfr_gpp(train_df, val_df, test_df, min_encoder_len):
+    # create training and validation TS dataset 
+    training = TimeSeriesDataSet(
+      train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence
+      time_idx="timestep_idx_global",
+      target="GPP_NT_VUT_REF",
+      group_ids=["site_id"],
+      allow_missing_timesteps=False, # <---- turned on bc some rows are removed.
+      min_encoder_length=min_encoder_len,
+      max_encoder_length=min_encoder_len,
+      min_prediction_length=1,
+      max_prediction_length=1,
+      static_categoricals=["MODIS_IGBP","koppen_main","koppen_sub"],
+      static_reals=[],
+      time_varying_known_categoricals=["month", "hour"],
+      time_varying_known_reals=["timestep_idx_global", 
+                                'TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
+                                'EVI', 'NDVI', 'NIRv', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7', 
+                                'BESS-PAR', 'BESS-PARdiff', 'BESS-RSDN', 'CSIF-SIFdaily', 'PET', 'Ts', 
+                                'ESACCI-sm', 'NDWI', 'Percent_Snow', 'Fpar', 'Lai', 'LST_Day','LST_Night'],
+      time_varying_unknown_categoricals=["gap_flag_month", "gap_flag_hour"], 
+      time_varying_unknown_reals=['estimated_gpp'],
+      target_normalizer=None,
+      categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
+                            'koppen_main': NaNLabelEncoder(add_nan=True),
+                            'koppen_sub': NaNLabelEncoder(add_nan=True),
+                            'year': NaNLabelEncoder(add_nan=True),
+                            },
+      add_relative_time_idx=True,
+      add_target_scales=False, # <------- turned off
+      add_encoder_length=False, # <------- turned off
+    )
+
+    validation = TimeSeriesDataSet.from_dataset(training, val_df, predict=False, stop_randomization=True)
+    
+    if test_df is not None:
+        testing = TimeSeriesDataSet.from_dataset(training, test_df, predict=False, stop_randomization=True)
+    else:
+        testing = None
+
+    return (training, validation, testing)
 
 # Eval Functions
 def nash_sutcliffe(observed_values, predicted_values):
@@ -416,13 +458,13 @@ def custom_optimize_hyperparameters(
     model_path: str,
     max_epochs: int = 20,
     n_trials: int = 100,
-    timeout: float = 3600 * 8.0,  # 8 hours
+    timeout: float = 3600 * 24.0 * 2,  # 2 days
     gradient_clip_val_range: Tuple[float, float] = (0.01, 100.0),
-    hidden_size_range: Tuple[int, int] = (16, 265),
-    hidden_continuous_size_range: Tuple[int, int] = (8, 64),
+    hidden_size_range: Tuple[int, int] = (10, 320),
+    hidden_continuous_size_range: Tuple[int, int] = (8, 160),
     attention_head_size_range: Tuple[int, int] = (1, 4),
-    dropout_range: Tuple[float, float] = (0.1, 0.3),
-    learning_rate_range: Tuple[float, float] = (1e-5, 1.0),
+    dropout_range: Tuple[float, float] = (0.1, 0.9),
+    learning_rate_range: Tuple[float, float] = (1e-5, 0.01),
     use_learning_rate_finder: bool = True,
     trainer_kwargs: Dict[str, Any] = {},
     trainer_callbacks: List[Callback] = None,
@@ -534,7 +576,7 @@ def custom_optimize_hyperparameters(
         kwargs["loss"] = copy.deepcopy(loss)
         model = TemporalFusionTransformer.from_dataset(
             train_dataloaders.dataset,
-            dropout=trial.suggest_uniform("dropout", *dropout_range),
+            dropout=trial.suggest_float("dropout", *dropout_range, step=0.1),
             hidden_size=hidden_size,
             hidden_continuous_size=trial.suggest_int(
                 "hidden_continuous_size",
