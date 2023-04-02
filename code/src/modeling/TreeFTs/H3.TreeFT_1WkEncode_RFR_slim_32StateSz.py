@@ -122,7 +122,7 @@ training, validation, _ = setup_tsdataset_rfr_gpp_slim(train_df, val_df, None, E
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
-batch_size = 64
+batch_size = 128
 cpu_count = os.cpu_count()
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=False)
