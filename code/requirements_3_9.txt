@@ -16,3 +16,4 @@ joblib==1.2.0
 ipykernel
 tensorflow
 boto3
+jinja2
