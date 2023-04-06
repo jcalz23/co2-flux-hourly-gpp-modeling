@@ -1,7 +1,10 @@
-MY_HOME_ABS_PATH = "/root/co2-flux-hourly-gpp-modeling"
-
 # Inmport Libraries
 import os
+if ("MY_HOME_ABS_PATH" in os.environ):
+  MY_HOME_ABS_PATH = os.environ.get('MY_HOME_ABS_PATH')
+else:
+  MY_HOME_ABS_PATH = "/root/co2-flux-hourly-gpp-modeling"
+  
 os.chdir(MY_HOME_ABS_PATH)
 
 import sys
