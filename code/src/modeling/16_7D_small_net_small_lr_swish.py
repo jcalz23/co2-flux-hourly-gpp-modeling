@@ -45,7 +45,7 @@ from data_pipeline_lib import *
 from model_pipeline_lib_for_nbinstance import *
 
 # Add Custom modules
-from temporal_fusion_transformer_gelu import TemporalFusionTransformer as TemporalFusionTransformer_GELU
+from temporal_fusion_transformer_swish import TemporalFusionTransformer as TemporalFusionTransformer_Swish
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.5f' % x)
@@ -72,7 +72,7 @@ local_file = tmp_dir + os.sep + blob_name
 data_df = get_raw_datasets(container, blob_name)
 
 # Define experiment
-exp_name = "16_tft_nogpp_custom_GELU_7D_small_lr"
+exp_name = "16_tft_nogpp_custom_Swish_7D_small_lr"
 
 # Experiment constants
 VAL_INDEX  = 3
@@ -137,7 +137,7 @@ train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=False)
 
 # Create TFT model from dataset
-tft = TemporalFusionTransformer_GELU.from_dataset(
+tft = TemporalFusionTransformer_Swish.from_dataset(
     training,
     learning_rate=0.00001,
     hidden_size=16,  # most important hyperparameter apart from learning rate
@@ -189,7 +189,7 @@ print(f"Training time: {train_time}")
 # load the best model according to the validation loss
 best_model_path = trainer.checkpoint_callback.best_model_path
 print(" Best model path: " + best_model_path)
-best_tft = TemporalFusionTransformer_GELU.load_from_checkpoint(best_model_path)
+best_tft = TemporalFusionTransformer_Swish.load_from_checkpoint(best_model_path)
 
 local_model_path = exp_model_dir + os.sep + f"model.pth"
 torch.save(best_tft.state_dict(), local_model_path)
