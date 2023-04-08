@@ -1,3 +1,4 @@
+#! /usr/bin/python
 MY_HOME_ABS_PATH = "/home/ec2-user/SageMaker/co2-flux-hourly-gpp-modeling"
 
 import os
@@ -27,9 +28,6 @@ from pytorch_forecasting import BaseModel, MAE
 from pytorch_forecasting.metrics.point import RMSE
 from pytorch_forecasting.data.encoders import NaNLabelEncoder
 
-# Add Custom modules
-from temporal_fusion_transformer_gelu import TemporalFusionTransformer as TemporalFusionTransformer_GELU
-
 import optuna
 from optuna.integration import PyTorchLightningPruningCallback, TensorBoardCallback
 
@@ -47,7 +45,10 @@ sys.path.append(os.path.abspath("./code/src/tools"))
   
 from CloudIO.AzStorageClient import AzStorageClient
 from data_pipeline_lib import *
-from model_pipeline_lib import *
+from model_pipeline_lib_for_nbinstance import *
+
+# Add Custom modules
+from temporal_fusion_transformer_gelu import TemporalFusionTransformer as TemporalFusionTransformer_GELU
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.5f' % x)
@@ -78,17 +79,10 @@ print(f"Training timestemp length = {SUBSET_LEN}.")
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
 exp_fname = f"tft_model_{exp_name}_{experiment_ts}"
 exp_model_dir = model_dir + os.sep + exp_fname
-exp_model_dir = "/root/co2-flux-hourly-gpp-modeling/data/models/tft_custom_GELU_1yrtrain_230406_0900"
+exp_model_dir = "/home/ec2-user/SageMaker/co2-flux-hourly-gpp-modeling/data/models/tft_GPP_custom_GELU_1yrtrain_230408_1100"
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
-
-# save study results - also we can resume tuning at a later point in time
-loaded_study = None
-with open(exp_model_dir + os.sep + "study.pkl", "rb") as fin:
-    loaded_study = pickle.load(fin)
-if loaded_study is not None:
-    print(f"Previous study has {len(loaded_study.trials) } trails.")
 
 # setup datasets
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
@@ -106,54 +100,32 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Setup trainer callbacks
 early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=3, mode="min",
                                     check_finite=True, verbose=False,)
-#########
-
-
-# # create study
-# study = custom_optimize_hyperparameters(
-#     train_dataloader,
-#     val_dataloader,
-#     model_path=exp_model_dir,
-#     n_trials=20,  # Defaults to 100.
-#     max_epochs=100, # Defaults to 20.
-#     gradient_clip_val_range=(0.01, 100.),  # Defaults to (0.01, 100.0)
-#     hidden_size_range=(128, 320),           # Defaults to (16, 265)
-#     hidden_continuous_size_range=(8, 64),  # Defaults to (8, 64).
-#     attention_head_size_range=(4, 4),      # Defaults to (1, 4).
-#     learning_rate_range=(1e-4, 1.0),       # Defaults to (1e-5, 1.0)
-#     dropout_range=(0.1, 0.3),              # Defaults to (0.1, 0.3).
-#     trainer_callbacks=[early_stop_callback],
-#     reduce_on_plateau_patience=3,
-#     use_learning_rate_finder=False,  # use Pytorch built-in solution to find ideal learning rate
-#     loss=QuantileLoss(),
-#     logging_metrics=nn.ModuleList([MAE(), RMSE()]), #SMAPE(), #MAPE() #<---- added metrics to report in TensorBoard
-#     optimizer="adam",
-#     log_dir = exp_model_dir,
-#     study = loaded_study,
-#     verbose = 2
-# )
 
  # learning rate= 0.001, batchsize:128,  hiddent_layer:64, dropout:0.2, hiddent_countinues:32
 
 # Create TFT model from dataset
 tft = TemporalFusionTransformer_GELU.from_dataset(
     training,
-    learning_rate=1e-5,
-    hidden_size=32,  # most important hyperparameter apart from learning rate
-    attention_head_size=4, # Set to up to 4 for large datasets
-    dropout=0.2,           # Between 0.1 and 0.3 are good values
-    hidden_continuous_size=32,  # set to <= hidden_size
+    learning_rate=0.00001,
+    hidden_size=16,  # most important hyperparameter apart from learning rate
+    attention_head_size=1, # Set to up to 4 for large datasets
+    dropout=0.3, # Between 0.1 and 0.3 are good values
+    hidden_continuous_size=16,  # set to <= hidden_size
     output_size=7,  # 7 quantiles by default
     loss=QuantileLoss(),
-    logging_metrics=nn.ModuleList([MAE(), RMSE()]), #SMAPE(), #MAPE() #<---- added metrics to report in TensorBoard
-    reduce_on_plateau_patience=4, # reduce learning rate if no improvement in validation loss after x epochs
+    logging_metrics=nn.ModuleList([MAE(), RMSE()]),
+    reduce_on_plateau_patience=2, # reduce learning rate if no improvement in validation loss after x epochs
     optimizer="adam"
 )
 
 print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 lr_logger = LearningRateMonitor()  # log the learning rate
-logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
+
+# update logger to CSV
+from pytorch_lightning.loggers import CSVLogger
+logger = CSVLogger("logs", name=exp_model_dir)
+# logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
     max_epochs=15,
@@ -183,10 +155,3 @@ best_tft = TemporalFusionTransformer_GELU.load_from_checkpoint(best_model_path)
 local_model_path = exp_model_dir + os.sep + f"model.pth"
 torch.save(best_tft.state_dict(), local_model_path)
 print(f"Saved model to {local_model_path}")
-  
-# save study results - also we can resume tuning at a later point in time
-with open(exp_model_dir + os.sep + "study.pkl", "wb") as fout:
-    pickle.dump(study, fout)
-
-# show best hyperparameters
-print(study.best_trial.params)
