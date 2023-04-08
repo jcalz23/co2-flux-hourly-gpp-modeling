@@ -17,3 +17,5 @@ ipykernel
 tensorflow
 boto3
 jinja2
+plotly
+nbformat
