@@ -34,7 +34,7 @@ from pytorch_forecasting.data import GroupNormalizer
 from pytorch_forecasting.metrics import SMAPE, PoissonLoss, QuantileLoss
 from pytorch_forecasting.models.temporal_fusion_transformer.tuning import optimize_hyperparameters
 from pytorch_forecasting import BaseModel, MAE
-from pytorch_forecasting.metrics.point import RMSE
+# from pytorch_forecasting.metrics.point import RMSE
 from pytorch_forecasting.data.encoders import NaNLabelEncoder
 
 import optuna
