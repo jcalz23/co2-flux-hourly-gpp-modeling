@@ -138,10 +138,10 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Create TFT model from dataset
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=0.0001414321246300602,
+    learning_rate=1e-5,
     hidden_size=136,  # most important hyperparameter apart from learning rate
     attention_head_size=4, # Set to up to 4 for large datasets
-    dropout=0.1239528685401419, # Between 0.1 and 0.3 are good values
+    dropout=0.15, # Between 0.1 and 0.3 are good values
     hidden_continuous_size=40,  # set to <= hidden_size
     output_size=7,  # 7 quantiles by default
     loss=QuantileLoss(),
