@@ -2,6 +2,8 @@
 MY_HOME_ABS_PATH = "/home/ec2-user/SageMaker/co2-flux-hourly-gpp-modeling"
 
 import os
+os.chdir(MY_HOME_ABS_PATH)
+
 import sys
 import warnings
 warnings.filterwarnings("ignore")
@@ -13,10 +15,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint, Callback, EarlyStopping
+from pytorch_lightning.callbacks import Callback, EarlyStopping, LearningRateMonitor
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
-import boto3
+import torch.nn as nn
 
 from pytorch_forecasting import Baseline, TemporalFusionTransformer, TimeSeriesDataSet
 from pytorch_forecasting.data import GroupNormalizer
@@ -36,9 +38,10 @@ import gc
 import pickle
 
 # Load locale custome modules
-sys.path.append(f'{MY_HOME_ABS_PATH}/.cred')
-sys.path.append(f'{MY_HOME_ABS_PATH}/code/src/tools')
-sys.path.append(os.path.abspath(f"{MY_HOME_ABS_PATH}/code/src/tools"))
+os.chdir(MY_HOME_ABS_PATH)
+sys.path.append('./cred')
+sys.path.append('./code/src/tools')
+sys.path.append(os.path.abspath("./code/src/tools"))
   
 from CloudIO.AzStorageClient import AzStorageClient
 from data_pipeline_lib import *
@@ -51,29 +54,15 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.float_format', lambda x: '%.5f' % x)
 pl.seed_everything(42)
 
-# Print GPUs available
-if torch.cuda.is_available():
-    device_count = torch.cuda.device_count()
-    print(f"Number of available GPUs: {device_count}")
-    accelerator = "gpu"
-else:
-    print("GPU is not available on this system.")
-    accelerator = "cpu"
-    
-import torch.multiprocessing as multiprocessing
-if multiprocessing.get_start_method() == 'fork':
-    multiprocessing.set_start_method('spawn', force=True)
-    print("{} setup done".format(multiprocessing.get_start_method()))
-        
-## Define Constants
+# Download full data
 root_dir  = MY_HOME_ABS_PATH
 tmp_dir   = root_dir + os.sep + '.tmp'
 model_dir = root_dir + os.sep + 'data' + os.sep + 'models'
+
 container = "all-sites-data"
 blob_name = "full_2010_2015_v_mvp_raw.parquet"
 local_file = tmp_dir + os.sep + blob_name
 
-# Download full data
 data_df = get_raw_datasets(container, blob_name)
 
 # Define experiment
@@ -82,17 +71,19 @@ exp_name = "16_tft_nogpp_custom_GELU_7D_small_lr"
 # Experiment constants
 VAL_INDEX  = 3
 TEST_INDEX = 4
-SUBSET_LEN = 24*10#365 # 5 year
-ENCODER_LEN = 24*1  # 7 days
+SUBSET_LEN = 24*365 # 1 year
+ENCODER_LEN = 24*7
 print(f"Training timestemp length = {SUBSET_LEN}.")
 
 # Create model result directory
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
-exp_fname = f"tft_model_{exp_name}_{experiment_ts}"
+exp_fname = f"{exp_name}_{experiment_ts}"
 exp_model_dir = model_dir + os.sep + exp_fname
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
+
+###############################
 
 def setup_tsdataset_nogpp_slim(train_df, val_df, test_df, min_encoder_len):
     training = TimeSeriesDataSet(
@@ -130,16 +121,29 @@ def setup_tsdataset_nogpp_slim(train_df, val_df, test_df, min_encoder_len):
     return (training, validation, testing)
 
 
-# setup datasets data
+
+
+############
+# setup datasets
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
 train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
 training, validation, _ = setup_tsdataset_nogpp_slim(train_df, val_df, None, ENCODER_LEN)
+############
 
 # create dataloaders for model
-batch_size = 64
+# ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
+batch_size = 64  # set this between 32 to 128
 cpu_count = os.cpu_count()
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
-val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=False)
+val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
+
+# Setup trainer callbacks
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=3, mode="min",
+                                    check_finite=True, verbose=False,)
+
+
+
+ # learning rate= 0.001, batchsize:128,  hiddent_layer:64, dropout:0.2, hiddent_countinues:32
 
 # Create TFT model from dataset
 tft = TemporalFusionTransformer_GELU.from_dataset(
@@ -155,33 +159,27 @@ tft = TemporalFusionTransformer_GELU.from_dataset(
     reduce_on_plateau_patience=2, # reduce learning rate if no improvement in validation loss after x epochs
     optimizer="adam"
 )
-print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
-# configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=6, mode="min", check_finite=True, verbose=False,)
+print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
+
 lr_logger = LearningRateMonitor()  # log the learning rate
-checkpoint_callback = ModelCheckpoint(dirpath=exp_model_dir, save_top_k=3, monitor="val_loss") # save model objects for top k epoch val loss
 
-
-# logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 # update logger to CSV
 from pytorch_lightning.loggers import CSVLogger
 logger = CSVLogger("logs", name=exp_model_dir)
-
+# logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=25,
+    max_epochs=15,
     enable_model_summary=True,
-    #gradient_clip_val=2,
-    fast_dev_run=False, 
-    accelerator=accelerator,
-    devices=4,#"auto", 
+    gradient_clip_val=0.1,
+    fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
+    accelerator='gpu',
+    devices=1,
     callbacks=[lr_logger, early_stop_callback],
-    logger=logger
-    #strategy="ddp",
+    logger=logger,
 )
 
-# Train
 start = default_timer()
 trainer.fit(
     tft,
@@ -199,9 +197,3 @@ best_tft = TemporalFusionTransformer_GELU.load_from_checkpoint(best_model_path)
 local_model_path = exp_model_dir + os.sep + f"model.pth"
 torch.save(best_tft.state_dict(), local_model_path)
 print(f"Saved model to {local_model_path}")
-
-# Save model to S3 in case too big for Git
-# s3 = boto3.client('s3')
-# bucket_name = 'sagemaker-capstone-mids-co2-models'
-# with open(local_model_path, 'rb') as f:
-#     s3.upload_fileobj(f, bucket_name, local_model_path)
