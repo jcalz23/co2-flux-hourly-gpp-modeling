@@ -94,7 +94,6 @@ def setup_tsdataset_gpptft(train_df, val_df, test_df, min_encoder_len):
       categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
                             'koppen_main': NaNLabelEncoder(add_nan=True),
                             'koppen_sub': NaNLabelEncoder(add_nan=True),
-                            'year': NaNLabelEncoder(add_nan=True),
                             },
       add_relative_time_idx=True,
       add_target_scales=False, # <------- turned off
@@ -154,7 +153,7 @@ print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 # configure network and trainer
 early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, mode="min",
                                     check_finite=True, verbose=False,)
-lr_logger = LearningRateMonitor()  # log the learning rate
+lr_logger = LearningRateMonitor(logging_interval='epoch')  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
