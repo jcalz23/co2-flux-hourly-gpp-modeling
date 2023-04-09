@@ -8,3 +8,4 @@ pip install --upgrade pip
 pip install --no-cache-dir -r requirements.txt torch
 # conda install ipykernel -y
 ipython kernel install --user --name=py310
+
