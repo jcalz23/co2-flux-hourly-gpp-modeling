@@ -152,7 +152,7 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"  Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=6, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, mode="min",
                                     check_finite=True, verbose=False,)
 lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
