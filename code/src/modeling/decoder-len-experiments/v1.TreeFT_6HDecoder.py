@@ -153,7 +153,7 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=25,
+    max_epochs=20,
     enable_model_summary=True,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',

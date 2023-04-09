@@ -113,7 +113,7 @@ def setup_tsdataset_decodexp(train_df, val_df, test_df):
 
 # Create model result directory
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
-exp_fname = f"treeft_{exp_name}_{experiment_ts}"
+exp_fname = f"{exp_name}_{experiment_ts}"
 exp_model_dir = model_dir + os.sep + exp_fname
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
@@ -154,7 +154,7 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=25,
+    max_epochs=20,
     enable_model_summary=True,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
