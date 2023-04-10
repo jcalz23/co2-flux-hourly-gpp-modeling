@@ -7,4 +7,4 @@ data/datasets/
 code/cred.zip
 code/src/EDA/logs/
 code/drafts/
-**/checkpoints/
+**/run_logs/
