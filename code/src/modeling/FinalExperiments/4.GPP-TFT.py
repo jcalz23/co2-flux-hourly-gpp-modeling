@@ -63,8 +63,8 @@ exp_name = "GPPTFT_5yrTrain_2WkEncode"
 # Experiment constants
 VAL_INDEX  = 3
 TEST_INDEX = 4
-# SUBSET_LEN = 24*365 # 1 year
-ENCODER_LEN = 24*7
+SUBSET_LEN = 24*365*5 # 5 year
+ENCODER_LEN = 24*14
 #print(f"Training timestemp length = {SUBSET_LEN}.")
 
 
@@ -119,7 +119,7 @@ print(f"Experiment logs saved to {exp_model_dir}.")
 
 # setup datasets data
 train_df, val_df, test_df = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
-# train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
+train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
 training, validation, _ = setup_tsdataset_gpptft(train_df, val_df, None, ENCODER_LEN)
 print(f"Training = {train_df.shape}.")
 print(f"Validation = {val_df.shape}.")
@@ -157,7 +157,7 @@ lr_logger = LearningRateMonitor(logging_interval='epoch')  # log the learning ra
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=15,
+    max_epochs=10,
     enable_model_summary=True,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
