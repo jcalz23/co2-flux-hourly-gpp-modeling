@@ -154,6 +154,13 @@ lr_logger = LearningRateMonitor()  # log the learning rate
 checkpoint_callback = ModelCheckpoint(dirpath=exp_model_dir, save_top_k=3, monitor="val_loss") # save model objects for top k epoch val loss
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
+# Load model checkpoint
+model_dir = "tft_model_19_nogpp_14D_small_lr_fullfeatures_230409_0212"
+exp_model_dir = f"/root/co2-flux-hourly-gpp-modeling/data/models/{model_dir}"
+checkpt_dir = f"{exp_model_dir}/lightning_logs/version_0/checkpoints/"
+checkpt = os.listdir(checkpt_dir)[-1]
+checkpt_path = f"{checkpt_dir}{checkpt}"
+
 trainer = pl.Trainer(
     max_epochs=25,
     enable_model_summary=True,
@@ -172,6 +179,7 @@ trainer.fit(
     tft,
     train_dataloaders=train_dataloader,
     val_dataloaders=val_dataloader,
+    ckpt_path=checkpt_path
 )
 train_time = default_timer() - start
 print(f"Training time: {train_time}")
