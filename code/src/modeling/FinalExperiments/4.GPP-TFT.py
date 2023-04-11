@@ -65,7 +65,7 @@ VAL_INDEX  = 3
 TEST_INDEX = 4
 SUBSET_LEN = 24*365*5 # 5 year
 ENCODER_LEN = 24*14
-#print(f"Training timestemp length = {SUBSET_LEN}.")
+print(f"Training timestemp length = {SUBSET_LEN}.")
 
 
 def setup_tsdataset_gpptft(train_df, val_df, test_df, min_encoder_len):
@@ -127,7 +127,7 @@ del test_df
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
-batch_size = 128  # set this between 32 to 128
+batch_size = 64  # set this between 32 to 128
 cpu_count = os.cpu_count()
 train_dataloader = training.to_dataloader(train=True, batch_size=batch_size, num_workers=cpu_count, pin_memory=True)
 val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, num_workers=cpu_count, pin_memory=False)

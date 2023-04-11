@@ -66,12 +66,14 @@ exp_name = "5YrTrain_2WkEncode_RFRv1_slim"
 # Experiment constants
 VAL_INDEX  = 3
 TEST_INDEX = 4
-ENCODER_LEN = 24*14  # 7 days
+SUBSET_LEN = 24*365*5 # 5 year
+ENCODER_LEN = 24*14
+print(f"Training timestemp length = {SUBSET_LEN}.")
 
-def setup_tsdataset_rfr_gpp_slim(train_df, val_df, test_df, min_encoder_len):
+def setup_tsdataset_treeft_slim(train_df, val_df, test_df, min_encoder_len):
     # create training and validation TS dataset 
     training = TimeSeriesDataSet(
-      train_df, # <------ no longer subsetting, option 1 split can use entire train site sequence
+      train_df, 
       time_idx="timestep_idx_global",
       target="GPP_NT_VUT_REF",
       group_ids=["site_id"],
@@ -85,10 +87,10 @@ def setup_tsdataset_rfr_gpp_slim(train_df, val_df, test_df, min_encoder_len):
       time_varying_known_categoricals=["month", "hour"],
       time_varying_known_reals=['TA_ERA', 'SW_IN_ERA', 'LW_IN_ERA', 'VPD_ERA', 'P_ERA', 'PA_ERA',
                                 'NDVI', 'b2', 'b4', 'b6', 'b7', 
-                                'BESS-PARdiff', 'CSIF-SIFdaily',
-                                'ESACCI-sm', 'Percent_Snow', 'Lai', 'LST_Day','LST_Night'],
+                                'BESS-PARdiff', 'CSIF-SIFdaily', 'ESACCI-sm', 'Percent_Snow', 
+                                'Lai', 'LST_Day','LST_Night'],
       time_varying_unknown_categoricals=["gap_flag_month", "gap_flag_hour"], 
-      time_varying_unknown_reals=['estimated_gpp'], 
+      time_varying_unknown_reals=['estimated_gpp'],
       target_normalizer=None,
       categorical_encoders={'MODIS_IGBP': NaNLabelEncoder(add_nan=True),
                             'koppen_main': NaNLabelEncoder(add_nan=True),
@@ -118,7 +120,8 @@ print(f"Experiment logs saved to {exp_model_dir}.")
 
 # setup datasets data
 train_df, val_df, _ = get_splited_datasets(data_df, VAL_INDEX, TEST_INDEX)
-training, validation, _ = setup_tsdataset_rfr_gpp_slim(train_df, val_df, None, ENCODER_LEN)
+train_df, val_df, _ = subset_data(train_df, val_df, None, SUBSET_LEN)
+training, validation, _ = setup_tsdataset_treeft_slim(train_df, val_df, None, ENCODER_LEN)
 
 # create dataloaders for model
 # ref: https://pytorch-lightning.readthedocs.io/en/stable/guides/speed.html#dataloaders
@@ -130,28 +133,28 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Create TFT model from dataset
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=0.001,
+    learning_rate=1e-5,
     hidden_size=16,  # most important hyperparameter apart from learning rate
     attention_head_size=1, # Set to up to 4 for large datasets
-    dropout=0.4, # Between 0.1 and 0.3 are good values
+    dropout=0.3, # Between 0.1 and 0.3 are good values
     hidden_continuous_size=16,  # set to <= hidden_size
     output_size=7,  # 7 quantiles by default
     loss=QuantileLoss(),
     logging_metrics=nn.ModuleList([MAE(), RMSE()]), #SMAPE(), #MAPE() #<---- added metrics to report in TensorBoard
-    reduce_on_plateau_patience=3, # reduce learning rate if no improvement in validation loss after x epochs
+    reduce_on_plateau_patience=2, # reduce learning rate if no improvement in validation loss after x epochs
     optimizer="adam"
 )
 
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=5e-4, patience=5, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, mode="min",
                                     check_finite=True, verbose=False,)
-lr_logger = LearningRateMonitor()  # log the learning rate
+lr_logger = LearningRateMonitor(logging_interval='epoch')  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=20,
+    max_epochs=15,
     enable_model_summary=True,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
