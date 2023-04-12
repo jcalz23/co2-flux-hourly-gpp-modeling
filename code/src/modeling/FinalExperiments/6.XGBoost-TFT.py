@@ -113,6 +113,7 @@ def setup_tsdataset_treeft_slim(train_df, val_df, test_df, min_encoder_len):
 # Create model result directory
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
 exp_fname = f"treeft_{exp_name}_{experiment_ts}"
+exp_fname = "treeft_5YrTrain_2WkEncode_xgboostv0_slim_230411_0122"
 exp_model_dir = model_dir + os.sep + exp_fname
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
@@ -169,6 +170,7 @@ trainer.fit(
     tft,
     train_dataloaders=train_dataloader,
     val_dataloaders=val_dataloader,
+    ckpt_path =  exp_model_dir + os.sep + "lightning_logs/version_0/checkpoints/epoch=6-step=279258.ckpt"
 )
 train_time = default_timer() - start
 print(f"Training time: {train_time}")
