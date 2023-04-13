@@ -111,7 +111,8 @@ def setup_tsdataset_gpptft(train_df, val_df, test_df, min_encoder_len):
 
 # Create model result directory
 experiment_ts = datetime.now().strftime("%y%m%d_%H%M")
-exp_fname = f"{exp_name}_{experiment_ts}"
+#exp_fname = f"{exp_name}_{experiment_ts}"
+exp_fname = "GPPTFT_5yrTrain_2WkEncode_230410_2310"
 exp_model_dir = model_dir + os.sep + exp_fname
 if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
@@ -172,6 +173,7 @@ trainer.fit(
     tft,
     train_dataloaders=train_dataloader,
     val_dataloaders=val_dataloader,
+    ckpt_path =  exp_model_dir + os.sep + "lightning_logs/version_0/checkpoints/epoch=4-step=24930.ckpt"
 )
 train_time = default_timer() - start
 print(f"Training time: {train_time}")
