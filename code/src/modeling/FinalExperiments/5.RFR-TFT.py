@@ -16,7 +16,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor
+from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
 
@@ -54,14 +54,14 @@ tmp_dir   = root_dir + os.sep + '.tmp'
 model_dir = root_dir + os.sep + 'data' + os.sep + 'models'
 
 container = "all-sites-data"
-blob_name = "hybrid-2010-2015-raw-v1.parquet"
+blob_name = "hybrid-2010-2015-raw-v2.parquet"
 local_file = tmp_dir + os.sep + blob_name
 
 data_df = get_raw_datasets(container, blob_name)
 data_df.rename(columns={"rfr_pred_gpp": "estimated_gpp"}, inplace=True)
 
 # Define experiment
-exp_name = "5YrTrain_2WkEncode_RFRv1_slim"
+exp_name = "5YrTrain_2WkEncode_RFRv2_slim"
 
 # Experiment constants
 VAL_INDEX  = 3
@@ -133,7 +133,7 @@ val_dataloader = validation.to_dataloader(train=False, batch_size=batch_size, nu
 # Create TFT model from dataset
 tft = TemporalFusionTransformer.from_dataset(
     training,
-    learning_rate=1e-5,
+    learning_rate=2e-5,
     hidden_size=16,  # most important hyperparameter apart from learning rate
     attention_head_size=1, # Set to up to 4 for large datasets
     dropout=0.3, # Between 0.1 and 0.3 are good values
@@ -148,8 +148,9 @@ tft = TemporalFusionTransformer.from_dataset(
 print(f"Number of parameters in network: {tft.size()/1e3:.1f}k")
 
 # configure network and trainer
-early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=5, mode="min",
+early_stop_callback = EarlyStopping(monitor="val_loss", min_delta=1e-4, patience=4, mode="min",
                                     check_finite=True, verbose=False,)
+checkpoint_callback = ModelCheckpoint(dirpath=exp_model_dir,  save_top_k=3, monitor="val_loss",  mode="min") # save model objects for top k epoch val loss
 lr_logger = LearningRateMonitor(logging_interval='epoch')  # log the learning rate
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
@@ -159,7 +160,7 @@ trainer = pl.Trainer(
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',
     devices="auto",
-    callbacks=[lr_logger, early_stop_callback],
+    callbacks=[lr_logger, early_stop_callback, checkpoint_callback],
     logger=logger,
     strategy="ddp",
 )
