@@ -80,7 +80,7 @@ if not (os.path.exists(exp_model_dir)):
     os.makedirs(exp_model_dir)
 print(f"Experiment logs saved to {exp_model_dir}.")
 
-def setup_tsdataset_nogpp_slim(train_df, val_df, test_df, min_encoder_len):
+def setup_tsdataset_nogpp_slim_30D(train_df, val_df, test_df, min_encoder_len):
     training = TimeSeriesDataSet(
       train_df,
       time_idx="timestep_idx_global",
