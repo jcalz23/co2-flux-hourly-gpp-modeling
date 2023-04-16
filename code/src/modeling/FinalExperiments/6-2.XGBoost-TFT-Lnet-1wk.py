@@ -61,7 +61,7 @@ data_df = get_raw_datasets(container, blob_name)
 data_df.rename(columns={"xgboost_pred_gpp": "estimated_gpp"}, inplace=True)
 
 # Define experiment
-exp_name = "5YrTrain_1WkEncode_xgboostv0_slim"
+exp_name = "5YrTrain_1WkEncode_xgbv0_slim_Lnet"
 
 # Experiment constants
 VAL_INDEX  = 3
@@ -155,7 +155,7 @@ checkpoint_callback = ModelCheckpoint(dirpath=exp_model_dir,  save_top_k=3, moni
 logger = TensorBoardLogger(exp_model_dir)  # logging results to a tensorboard
 
 trainer = pl.Trainer(
-    max_epochs=15,
+    max_epochs=8,
     enable_model_summary=True,
     fast_dev_run=False,  # comment in to check that network or dataset has no serious bugs
     accelerator='gpu',

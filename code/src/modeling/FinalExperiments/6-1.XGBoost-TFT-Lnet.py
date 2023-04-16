@@ -137,7 +137,7 @@ tft = TemporalFusionTransformer.from_dataset(
     hidden_size=128,  # most important hyperparameter apart from learning rate
     attention_head_size=4, # Set to up to 4 for large datasets
     dropout=0.1, # Between 0.1 and 0.3 are good values
-    hidden_continuous_size=124,  # set to <= hidden_size
+    hidden_continuous_size=128,  # set to <= hidden_size
     output_size=7,  # 7 quantiles by default
     loss=QuantileLoss(),
     logging_metrics=nn.ModuleList([MAE(), RMSE()]), #SMAPE(), #MAPE() #<---- added metrics to report in TensorBoard
